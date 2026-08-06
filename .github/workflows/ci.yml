@@ -33,6 +33,10 @@ jobs:
       SCIOS_INTERNAL_SECRET: ci-internal-secret
       SCIOS_ACCESS_TOKEN: ci-private-access
       SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+      OPENAI_ENABLED: 'false'
+      OPENAI_MAX_REQUESTS_PER_DAY: '0'
+      OPENAI_MAX_MONTHLY_COST_USD: '0'
+      PAID_SERVICES_ALLOWED: 'false'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,6 +57,7 @@ jobs:
           python -m compileall -q app.py app tests 2>&1 | tee /tmp/compile.txt || failed=1
           node --check static/live.js 2>&1 | tee /tmp/node-live.txt || failed=1
           node --check static/access.js 2>&1 | tee /tmp/node-access.txt || failed=1
+          node --check static/backup.js 2>&1 | tee /tmp/node-backup.txt || failed=1
           node --check static/sw.js 2>&1 | tee /tmp/node-worker.txt || failed=1
           pytest -q 2>&1 | tee /tmp/pytest.txt || failed=1
           exit "$failed"
@@ -79,10 +84,16 @@ jobs:
               'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
               'result': os.environ.get('VALIDATION_OUTCOME', 'unknown'),
               'python': '3.12.8',
+              'zero_cost_mode': {
+                  'openai_enabled': False,
+                  'paid_services_allowed': False,
+                  'api_cost_chf': 0,
+              },
               'checks': {
                   'python_compile': tail('/tmp/compile.txt'),
                   'node_live': tail('/tmp/node-live.txt'),
                   'node_access': tail('/tmp/node-access.txt'),
+                  'node_backup': tail('/tmp/node-backup.txt'),
                   'node_service_worker': tail('/tmp/node-worker.txt'),
                   'pytest': tail('/tmp/pytest.txt'),
               },
