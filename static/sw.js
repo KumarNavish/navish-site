@@ -5,6 +5,7 @@ const ASSETS=[
   "/assets/live9-overrides.css?v=live9",
   "/assets/access.js?v=live9",
   "/assets/backup.js?v=live9",
+  "/assets/enhancements.js?v=live9",
   "/assets/live.js?v=live9",
   "/assets/ui.js",
   "/assets/workspace-detail.js",
