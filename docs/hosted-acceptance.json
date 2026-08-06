@@ -1,23 +1,23 @@
 {
-  "tested_commit": "fd341a4d71f91dd34ffc28f872ae4c9fca7e7270",
+  "tested_commit": "b4cbb8ebd5887ceaf3a4d0272cb3b8549394827b",
   "origin": "https://swiss-career-intelligence-os.onrender.com",
-  "observed_at_utc": "2026-08-06T13:19:38.273974+00:00",
+  "observed_at_utc": "2026-08-06T13:52:54.525988+00:00",
   "tls": "validated by curl certificate verification",
   "probe_result": "success",
-  "production_state": "blocked_by_postgresql_attachment",
+  "production_state": "complete",
   "root_status": 200,
   "healthz": {
     "status": "ok",
     "revision": "2026.08.06-live.5",
     "external_actions_executed": false
   },
-  "readyz_status": 503,
+  "readyz_status": 200,
   "readyz": {
-    "status": "not_ready",
+    "status": "ready",
     "revision": "2026.08.06-live.5",
     "checks": {
       "database_connection": true,
-      "postgresql_durability": false,
+      "postgresql_durability": true,
       "profile_evidence": true,
       "static_assets": true,
       "cryptographic_configuration": true
@@ -26,9 +26,9 @@
   "ops_status": 200,
   "ops": {
     "status": "ok",
-    "checked_at": "2026-08-06T13:19:37.712294+00:00",
+    "checked_at": "2026-08-06T13:52:53.915727+00:00",
     "revision": "2026.08.06-live.5",
-    "database_backend": "sqlite",
+    "database_backend": "postgresql",
     "profile_evidence_count": 24,
     "current_roles_analyzed": 4,
     "serious_roles_retained": 4,
@@ -43,9 +43,9 @@
     "last_execution": {
       "name": "Initial hosted source scan",
       "status": "success",
-      "started_at": "2026-08-06T13:15:04.505744+00:00",
-      "completed_at": "2026-08-06T13:15:51.525372+00:00",
-      "roles_discovered": 96,
+      "started_at": "2026-08-06T13:52:03.748029+00:00",
+      "completed_at": "2026-08-06T13:52:51.109145+00:00",
+      "roles_discovered": 0,
       "roles_changed": 0,
       "roles_rejected": 1970,
       "model_requests": 96,
