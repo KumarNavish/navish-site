@@ -1,1 +1,1 @@
-Run the final Chromium acceptance workflow against the production application code.
+Run Chromium acceptance against the strict Swiss-only portfolio and PostgreSQL readiness code.
