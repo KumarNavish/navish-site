@@ -57,10 +57,16 @@ app = legacy.app
 
 # Remove legacy routes that would otherwise precede the production replacements,
 # then restore the SPA fallback only after every explicit API route is present.
-_spa_fallback = next((route for route in app.router.routes if getattr(route, "path", None) == "/{path:path}"), None)
+_spa_fallback = next(
+    (route for route in app.router.routes if getattr(route, "path", None) == "/{path:path}"),
+    None,
+)
 if _spa_fallback is not None:
     app.router.routes.remove(_spa_fallback)
-_legacy_import = next((route for route in app.router.routes if getattr(route, "path", None) == "/api/jobs/import"), None)
+_legacy_import = next(
+    (route for route in app.router.routes if getattr(route, "path", None) == "/api/jobs/import"),
+    None,
+)
 if _legacy_import is not None:
     app.router.routes.remove(_legacy_import)
 
@@ -74,11 +80,12 @@ from .quality_overlay import install_quality_routes, install_reasoning_gates  # 
 from .readiness import install_readiness  # noqa: E402
 from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
+from .workspace import install_workspace  # noqa: E402
 from .zero_cost_status import install_zero_cost_status  # noqa: E402
 
 intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
 intelligence_module.MODEL_PROVIDER = "deterministic_gates_v8"
-intelligence_module.APP_REVISION = "2026.08.06-live.8"
+intelligence_module.APP_REVISION = "2026.08.06-live.9"
 install_reasoning_gates(intelligence_module)
 install_adversarial_gates(intelligence_module)
 runtime = install(legacy)
@@ -86,6 +93,7 @@ install_diagnostics(legacy, runtime)
 install_public_ops(legacy, runtime)
 install_manual_import(legacy, runtime)
 install_quality_routes(legacy, runtime, intelligence_module)
+install_workspace(legacy, runtime)
 install_readiness(legacy)
 install_backup(legacy, runtime)
 install_zero_cost_status(legacy, intelligence_module)
