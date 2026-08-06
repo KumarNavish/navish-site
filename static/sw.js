@@ -2,6 +2,7 @@ const CACHE="scios-live9";
 const ASSETS=[
   "/",
   "/assets/live.css?v=live9",
+  "/assets/live9-overrides.css?v=live9",
   "/assets/access.js?v=live9",
   "/assets/backup.js?v=live9",
   "/assets/live.js?v=live9",
