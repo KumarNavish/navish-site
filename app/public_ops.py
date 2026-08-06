@@ -4,7 +4,6 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import HTTPException
 from sqlalchemy import func, select, text
 
 
@@ -27,8 +26,8 @@ def install_public_ops(legacy: Any, runtime: Any) -> None:
     The wake-up endpoint can only execute work already due according to the
     persistent Europe/Zurich schedule. It cannot force an application, message,
     employer contact, arbitrary source, or arbitrary command. Calls are also
-    rate-limited in the database, making it safe for Render Cron without a
-    second user-managed credential.
+    rate-limited in the database, making it safe for a credential-free hosted
+    wake-up without expanding the product's external-action boundary.
     """
 
     @legacy.app.post("/api/scheduler/tick")
@@ -41,7 +40,9 @@ def install_public_ops(legacy: Any, runtime: Any) -> None:
                 try:
                     last = datetime.fromisoformat(previous.get("at", ""))
                     if _aware(last) and _aware(last) > datetime.now(UTC) - timedelta(minutes=5):
-                        return {"status": "rate_limited", "next_allowed_after": (_aware(last) + timedelta(minutes=5)).isoformat(), "external_actions_executed": False}
+                        result = {"status": "rate_limited", "next_allowed_after": (_aware(last) + timedelta(minutes=5)).isoformat(), "external_actions_executed": False}
+                        print("SCIOS_SCHEDULER " + json.dumps(result, sort_keys=True), flush=True)
+                        return result
                 except Exception:
                     pass
             payload = json.dumps({"at": datetime.now(UTC).isoformat()})
@@ -52,19 +53,37 @@ def install_public_ops(legacy: Any, runtime: Any) -> None:
                 row.value = payload
                 row.updated_at = datetime.now(UTC)
             db.commit()
-        result = runtime.run_due()
-        return {**result, "external_actions_executed": False}
+        result = {**runtime.run_due(), "external_actions_executed": False}
+        print("SCIOS_SCHEDULER " + json.dumps(result, default=str, sort_keys=True), flush=True)
+        return result
 
     @legacy.app.get("/ops/summary")
     def public_summary() -> dict[str, Any]:
         with legacy.SessionLocal() as db:
             db.execute(text("SELECT 1"))
             latest = db.scalar(select(runtime.AutomationRun).order_by(runtime.AutomationRun.started_at.desc()))
-            active_roles = db.scalar(select(func.count()).select_from(runtime.OpportunityMeta).where(runtime.OpportunityMeta.active_status == "Active — verified from official source")) or 0
+            metas = db.scalars(select(runtime.OpportunityMeta).where(runtime.OpportunityMeta.active_status == "Active — verified from official source")).all()
+            active_roles = len(metas)
             serious_roles = 0
-            for meta in db.scalars(select(runtime.OpportunityMeta).where(runtime.OpportunityMeta.active_status == "Active — verified from official source")).all():
-                if _load(meta.analysis_json, {}).get("decision") in {"Strongly pursue", "Pursue", "Investigate one blocker"}:
+            top_roles: list[dict[str, Any]] = []
+            for meta in metas:
+                analysis = _load(meta.analysis_json, {})
+                if analysis.get("decision") in {"Strongly pursue", "Pursue", "Investigate one blocker"}:
                     serious_roles += 1
+                    job = db.get(legacy.Job, meta.job_id)
+                    if job:
+                        top_roles.append({
+                            "company": job.company,
+                            "title": job.title,
+                            "location": job.location,
+                            "decision": analysis.get("decision"),
+                            "fit": analysis.get("fit_score"),
+                            "hov": analysis.get("hiring_opportunity_value"),
+                            "interview_band": analysis.get("interview_band"),
+                            "compensation": analysis.get("compensation", {}).get("label"),
+                            "source": meta.source_name,
+                        })
+            top_roles.sort(key=lambda item: (item.get("hov") or 0, item.get("fit") or 0), reverse=True)
             profile = db.scalar(select(legacy.Profile).order_by(legacy.Profile.id))
             evidence_count = len(_load(profile.evidence_json, [])) if profile else 0
             applications = db.scalar(select(func.count()).select_from(legacy.Application)) or 0
@@ -73,7 +92,7 @@ def install_public_ops(legacy: Any, runtime: Any) -> None:
             sources = db.scalar(select(func.count()).select_from(runtime.SourceState)) or 0
             source_success = db.scalar(select(func.count()).select_from(runtime.SourceState).where(runtime.SourceState.last_success.is_not(None))) or 0
             schedules = db.scalars(select(runtime.ScheduleState).where(runtime.ScheduleState.enabled.is_(True)).order_by(runtime.ScheduleState.next_run)).all()
-            return {
+            summary = {
                 "status": "ok",
                 "checked_at": datetime.now(UTC).isoformat(),
                 "revision": "2026.08.06-live.4",
@@ -103,3 +122,7 @@ def install_public_ops(legacy: Any, runtime: Any) -> None:
                 "model_fallback": True,
                 "external_actions_executed": False,
             }
+            # The response stays privacy-safe; public job titles are emitted only
+            # to the private Render log stream for deployment acceptance.
+            print("SCIOS_OPS " + json.dumps({**summary, "top_roles": top_roles[:5]}, default=str, sort_keys=True), flush=True)
+            return summary
