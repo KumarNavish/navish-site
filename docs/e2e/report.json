@@ -1,0 +1,25 @@
+{
+  "result": "success",
+  "viewports": [
+    "390x844",
+    "1440x1000"
+  ],
+  "steps": [
+    "passwordless private session opened",
+    "job imported and evidence-bounded analysis rendered",
+    "Pursue created package without external submission",
+    "role-specific interview preparation scheduled",
+    "Today limited to at most three consequential actions",
+    "desktop responsive extension rendered"
+  ],
+  "console_errors": [],
+  "failed_requests": [],
+  "external_actions_executed": false,
+  "screenshots": [
+    "01-today-mobile.png",
+    "02-role-analysis-mobile.png",
+    "03-application-package-mobile.png",
+    "04-preparation-mobile.png",
+    "05-today-desktop.png"
+  ]
+}
