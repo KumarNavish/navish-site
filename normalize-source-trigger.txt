@@ -1,0 +1,1 @@
+Apply the exact source-normalization patch and rerun production validation.
