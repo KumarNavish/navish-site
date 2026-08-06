@@ -1,1 +1,1 @@
-Trigger the free hosted scheduler and verify the deployed Swiss Career Intelligence OS.
+Trigger the free hosted scheduler and capture the current production acceptance snapshot.
