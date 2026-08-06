@@ -1,0 +1,70 @@
+{
+  "tested_commit": "2c1fb24fe0ae40f956cde2b18f7e2ec5b93b4b3c",
+  "origin": "https://swiss-career-intelligence-os.onrender.com",
+  "observed_at_utc": "2026-08-06T12:06:09.269232+00:00",
+  "tls": "validated by curl certificate verification",
+  "probe_result": "success",
+  "production_state": "blocked_by_postgresql_attachment",
+  "root_status": 200,
+  "healthz": {
+    "status": "ok",
+    "revision": "2026.08.06-live.5",
+    "external_actions_executed": false
+  },
+  "readyz_status": 503,
+  "readyz": {
+    "status": "not_ready",
+    "revision": "2026.08.06-live.5",
+    "checks": {
+      "database_connection": true,
+      "postgresql_durability": false,
+      "profile_evidence": true,
+      "static_assets": true,
+      "cryptographic_configuration": true
+    }
+  },
+  "ops_status": 200,
+  "ops": {
+    "status": "ok",
+    "checked_at": "2026-08-06T12:06:08.700890+00:00",
+    "revision": "2026.08.06-live.5",
+    "database_backend": "sqlite",
+    "profile_evidence_count": 24,
+    "current_roles_analyzed": 4,
+    "serious_roles_retained": 4,
+    "application_records": 4,
+    "active_preparation_sessions": 5,
+    "today_actions": 3,
+    "official_sources": {
+      "configured": 21,
+      "successful": 20
+    },
+    "next_execution": "2026-08-06T14:30:00+00:00",
+    "last_execution": {
+      "name": "Initial hosted source scan",
+      "status": "success",
+      "started_at": "2026-08-06T12:00:02.509809+00:00",
+      "completed_at": "2026-08-06T12:00:53.616131+00:00",
+      "roles_discovered": 96,
+      "roles_changed": 0,
+      "roles_rejected": 1970,
+      "model_requests": 96,
+      "model_used": "deterministic_gates_v5",
+      "error_count": 1
+    },
+    "worker_state": "running",
+    "model_used": "deterministic_gates_v5",
+    "model_fallback": true,
+    "external_actions_executed": false
+  },
+  "unauthenticated_private_api_status": 401,
+  "cross_origin_mutation_status": 403,
+  "security_headers": {
+    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "referrer-policy": "no-referrer",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+  }
+}
