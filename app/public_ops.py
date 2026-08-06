@@ -21,40 +21,75 @@ def _load(value: str, default: Any) -> Any:
 
 
 def install_public_ops(legacy: Any, runtime: Any) -> None:
-    """Expose a bounded scheduler wake-up and privacy-safe health summary.
+    """Expose bounded, input-free scheduler and refresh operations.
 
-    The wake-up endpoint can only execute work already due according to the
-    persistent Europe/Zurich schedule. It cannot force an application, message,
-    employer contact, arbitrary source, or arbitrary command. Calls are also
-    rate-limited in the database, making it safe for a credential-free hosted
-    wake-up without expanding the product's external-action boundary.
+    These endpoints can only execute deterministic work against the fixed
+    official-source catalog. They accept no source URL, command, message,
+    application or employer action. Database-backed rate limits prevent abuse.
     """
 
-    @legacy.app.post("/api/scheduler/tick")
-    def scheduler_tick() -> dict[str, Any]:
+    def claim(key: str, interval: timedelta) -> tuple[bool, datetime | None]:
+        now = datetime.now(UTC)
         with legacy.SessionLocal() as db:
             db.execute(text("SELECT 1"))
-            row = db.scalar(select(runtime.RuntimeState).where(runtime.RuntimeState.key == "public_scheduler_tick"))
+            row = db.scalar(select(runtime.RuntimeState).where(runtime.RuntimeState.key == key))
             if row is not None:
                 previous = _load(row.value, {})
                 try:
-                    last = datetime.fromisoformat(previous.get("at", ""))
-                    if _aware(last) and _aware(last) > datetime.now(UTC) - timedelta(minutes=5):
-                        result = {"status": "rate_limited", "next_allowed_after": (_aware(last) + timedelta(minutes=5)).isoformat(), "external_actions_executed": False}
-                        print("SCIOS_SCHEDULER " + json.dumps(result, sort_keys=True), flush=True)
-                        return result
+                    last = _aware(datetime.fromisoformat(previous.get("at", "")))
+                    if last and last > now - interval:
+                        return False, last + interval
                 except Exception:
                     pass
-            payload = json.dumps({"at": datetime.now(UTC).isoformat()})
+            payload = json.dumps({"at": now.isoformat()})
             if row is None:
-                row = runtime.RuntimeState(key="public_scheduler_tick", value=payload, updated_at=datetime.now(UTC))
-                db.add(row)
+                db.add(runtime.RuntimeState(key=key, value=payload, updated_at=now))
             else:
                 row.value = payload
-                row.updated_at = datetime.now(UTC)
+                row.updated_at = now
             db.commit()
-        result = {**runtime.run_due(), "external_actions_executed": False}
+        return True, None
+
+    @legacy.app.post("/api/scheduler/tick")
+    def scheduler_tick() -> dict[str, Any]:
+        allowed, next_allowed = claim("public_scheduler_tick", timedelta(minutes=5))
+        if not allowed:
+            result = {
+                "status": "rate_limited",
+                "next_allowed_after": next_allowed.isoformat() if next_allowed else None,
+                "external_actions_executed": False,
+                "cost_chf": 0,
+            }
+            print("SCIOS_SCHEDULER " + json.dumps(result, sort_keys=True), flush=True)
+            return result
+        result = {**runtime.run_due(), "external_actions_executed": False, "cost_chf": 0}
         print("SCIOS_SCHEDULER " + json.dumps(result, default=str, sort_keys=True), flush=True)
+        return result
+
+    @legacy.app.post("/api/scheduler/refresh")
+    def deterministic_refresh() -> dict[str, Any]:
+        """Force one bounded official-source refresh at most once per hour."""
+
+        allowed, next_allowed = claim("public_deterministic_refresh", timedelta(hours=1))
+        if not allowed:
+            return {
+                "status": "rate_limited",
+                "next_allowed_after": next_allowed.isoformat() if next_allowed else None,
+                "external_actions_executed": False,
+                "cost_chf": 0,
+            }
+        scan = runtime.scan_sources()
+        priority = runtime.daily_priority()
+        result = {
+            "status": "completed",
+            "scan": scan,
+            "priority": priority,
+            "reasoning": "deterministic evidence gates",
+            "openai_requests": 0,
+            "external_actions_executed": False,
+            "cost_chf": 0,
+        }
+        print("SCIOS_REFRESH " + json.dumps(result, default=str, sort_keys=True), flush=True)
         return result
 
     @legacy.app.get("/ops/summary")
@@ -95,7 +130,7 @@ def install_public_ops(legacy: Any, runtime: Any) -> None:
             summary = {
                 "status": "ok",
                 "checked_at": datetime.now(UTC).isoformat(),
-                "revision": "2026.08.06-live.4",
+                "revision": "runtime-overlay",
                 "database_backend": "postgresql" if str(legacy.DB_URL).startswith("postgresql") else "sqlite",
                 "profile_evidence_count": evidence_count,
                 "current_roles_analyzed": active_roles,
@@ -118,11 +153,9 @@ def install_public_ops(legacy: Any, runtime: Any) -> None:
                     "error_count": 1 if latest.error_summary else 0,
                 } if latest else None,
                 "worker_state": "running",
-                "model_used": "deterministic_gates_v4",
+                "model_used": "deterministic evidence gates",
                 "model_fallback": True,
                 "external_actions_executed": False,
             }
-            # The response stays privacy-safe; public job titles are emitted only
-            # to the private Render log stream for deployment acceptance.
             print("SCIOS_OPS " + json.dumps({**summary, "top_roles": top_roles[:5]}, default=str, sort_keys=True), flush=True)
             return summary
