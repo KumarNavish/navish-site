@@ -1,1 +1,1 @@
-Validate the final production revision after source normalization and workflow cleanup.
+Validate the zero-cost continuity release, including backup export, restore, browser assets, deterministic reasoning, and the external-action boundary.
