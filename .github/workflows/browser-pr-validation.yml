@@ -1,0 +1,70 @@
+name: Browser validation for workflow changes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'app/**'
+      - 'static/**'
+      - 'tests/**'
+      - '.github/workflows/browser-pr-validation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scios-browser-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-browser-pr.db
+      SCIOS_WORKER_ENABLED: 'false'
+      SCIOS_SESSION_SECURE_COOKIE: 'false'
+      SCIOS_INTERNAL_SECRET: browser-pr-internal-secret
+      SCIOS_ACCESS_TOKEN: ci-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: pip
+      - name: Install application and Chromium
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt playwright==1.54.0
+          python -m playwright install --with-deps chromium
+      - name: Start production application
+        shell: bash
+        run: |
+          uvicorn app:app --host 127.0.0.1 --port 8000 > /tmp/scios-browser-pr.log 2>&1 &
+          echo $! > /tmp/scios-browser-pr.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8000/readyz >/tmp/ready.json; then
+              cat /tmp/ready.json
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/scios-browser-pr.log
+          exit 1
+      - name: Exercise responsive hiring workflow
+        run: python tests/e2e_live.py
+      - name: Stop application
+        if: always()
+        run: |
+          if [ -f /tmp/scios-browser-pr.pid ]; then kill "$(cat /tmp/scios-browser-pr.pid)" || true; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scios-redesign-browser-pr
+          path: |
+            docs/e2e
+            /tmp/scios-browser-pr.log
+          if-no-files-found: warn
