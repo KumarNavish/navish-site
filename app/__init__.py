@@ -40,6 +40,8 @@ from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
 
 intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
+intelligence_module.MODEL_PROVIDER = "deterministic_gates_v5"
+intelligence_module.APP_REVISION = "2026.08.06-live.5"
 install_reasoning_gates(intelligence_module)
 runtime = install(legacy)
 install_diagnostics(legacy, runtime)
