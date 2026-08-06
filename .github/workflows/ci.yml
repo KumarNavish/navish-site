@@ -47,7 +47,7 @@ jobs:
           cache: pip
       - name: Install deterministic dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-      - name: Compile, validate JavaScript, and run the full suite
+      - name: Compile, validate all JavaScript, and run the full suite
         id: validation
         continue-on-error: true
         shell: bash
@@ -55,10 +55,15 @@ jobs:
           set -o pipefail
           failed=0
           python -m compileall -q app.py app tests 2>&1 | tee /tmp/compile.txt || failed=1
-          node --check static/live.js 2>&1 | tee /tmp/node-live.txt || failed=1
-          node --check static/access.js 2>&1 | tee /tmp/node-access.txt || failed=1
-          node --check static/backup.js 2>&1 | tee /tmp/node-backup.txt || failed=1
-          node --check static/sw.js 2>&1 | tee /tmp/node-worker.txt || failed=1
+          : > /tmp/node-all.txt
+          for file in static/*.js; do
+            if grep -Eq '^(import|export) ' "$file"; then
+              node --input-type=module --check < "$file" >> /tmp/node-all.txt 2>&1 || failed=1
+            else
+              node --check "$file" >> /tmp/node-all.txt 2>&1 || failed=1
+            fi
+          done
+          cat /tmp/node-all.txt
           pytest -q 2>&1 | tee /tmp/pytest.txt || failed=1
           exit "$failed"
       - name: Persist exact CI evidence
@@ -74,7 +79,7 @@ jobs:
           from datetime import datetime, timezone
           from pathlib import Path
 
-          def tail(path: str, limit: int = 30) -> list[str]:
+          def tail(path: str, limit: int = 40) -> list[str]:
               file = Path(path)
               return file.read_text(errors='replace').splitlines()[-limit:] if file.exists() else []
 
@@ -91,10 +96,7 @@ jobs:
               },
               'checks': {
                   'python_compile': tail('/tmp/compile.txt'),
-                  'node_live': tail('/tmp/node-live.txt'),
-                  'node_access': tail('/tmp/node-access.txt'),
-                  'node_backup': tail('/tmp/node-backup.txt'),
-                  'node_service_worker': tail('/tmp/node-worker.txt'),
+                  'node_all_static_modules': tail('/tmp/node-all.txt'),
                   'pytest': tail('/tmp/pytest.txt'),
               },
           }
