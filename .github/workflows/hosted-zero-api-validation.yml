@@ -16,7 +16,7 @@ jobs:
   validate:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.issue.title, '[SCIOS HOSTED VALIDATE]')
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     env:
       BASE_URL: https://swiss-career-intelligence-os.onrender.com
     steps:
@@ -43,12 +43,17 @@ jobs:
           base = os.environ['BASE_URL'].rstrip('/')
           context = ssl.create_default_context()
 
-          def request(path: str, attempts: int = 8):
+          def request(path: str, attempts: int = 8, method: str = 'GET'):
               error = None
               for attempt in range(attempts):
                   try:
-                      req = urllib.request.Request(base + path, headers={'User-Agent': 'SCIOS-Hosted-Validation/1.0'})
-                      with urllib.request.urlopen(req, timeout=120, context=context) as response:
+                      req = urllib.request.Request(
+                          base + path,
+                          data=b'' if method == 'POST' else None,
+                          method=method,
+                          headers={'User-Agent': 'SCIOS-Hosted-Validation/1.0'},
+                      )
+                      with urllib.request.urlopen(req, timeout=300, context=context) as response:
                           body = response.read()
                           return {
                               'status': response.status,
@@ -58,30 +63,37 @@ jobs:
                           }
                   except Exception as exc:
                       error = repr(exc)
-                      time.sleep(min(10 + attempt * 5, 35))
-              raise RuntimeError(f'{path} failed after {attempts} attempts: {error}')
+                      if attempt + 1 < attempts:
+                          time.sleep(min(10 + attempt * 5, 35))
+              raise RuntimeError(f'{method} {path} failed after {attempts} attempts: {error}')
 
           checks = {}
           for path in ('/', '/healthz', '/readyz', '/ops/chatgpt', '/ops/cost', '/ops/wake',
                        '/assets/chatgpt-native.js', '/assets/chatgpt-native.css', '/api/auth/status'):
               checks[path] = request(path)
 
+          refresh = request('/api/scheduler/refresh', attempts=3, method='POST')
+          checks['POST /api/scheduler/refresh'] = refresh
+          checks['/ops/summary'] = request('/ops/summary')
+
           protected = {}
           for path in ('/api/chatgpt/status', '/api/chatgpt/connection', '/mcp'):
               try:
-                  protected[path] = request(path, attempts=1)
-              except RuntimeError as wrapped:
-                  # urllib raises for 401; repeat once and retain the response body.
-                  try:
-                      req = urllib.request.Request(base + path, headers={'User-Agent': 'SCIOS-Hosted-Validation/1.0'})
-                      urllib.request.urlopen(req, timeout=60, context=context)
-                  except urllib.error.HTTPError as exc:
+                  req = urllib.request.Request(base + path, headers={'User-Agent': 'SCIOS-Hosted-Validation/1.0'})
+                  with urllib.request.urlopen(req, timeout=60, context=context) as response:
                       protected[path] = {
-                          'status': exc.code,
-                          'url': exc.geturl(),
-                          'headers': {key.lower(): value for key, value in exc.headers.items()},
-                          'body': exc.read().decode('utf-8', errors='replace'),
+                          'status': response.status,
+                          'url': response.geturl(),
+                          'headers': {key.lower(): value for key, value in response.headers.items()},
+                          'body': response.read().decode('utf-8', errors='replace'),
                       }
+              except urllib.error.HTTPError as exc:
+                  protected[path] = {
+                      'status': exc.code,
+                      'url': exc.geturl(),
+                      'headers': {key.lower(): value for key, value in exc.headers.items()},
+                      'body': exc.read().decode('utf-8', errors='replace'),
+                  }
 
           def payload(path: str):
               return json.loads(checks[path]['body'])
@@ -92,6 +104,8 @@ jobs:
           cost = payload('/ops/cost')
           wake = payload('/ops/wake')
           auth = payload('/api/auth/status')
+          refresh_payload = json.loads(refresh['body'])
+          summary = payload('/ops/summary')
 
           assert checks['/']['status'] == 200
           assert checks['/']['url'].startswith('https://')
@@ -104,6 +118,11 @@ jobs:
           assert cost['paid_services_allowed'] is False and cost['openai_api_enabled'] is False
           assert wake['openai_api_used'] is False and wake['api_cost_chf'] == 0
           assert wake['external_actions_executed'] is False
+          assert refresh_payload['external_actions_executed'] is False and refresh_payload['cost_chf'] == 0
+          if refresh_payload.get('status') == 'completed':
+              assert refresh_payload['openai_requests'] == 0
+          assert summary['external_actions_executed'] is False
+          assert summary['database_backend'] in {'postgresql', 'sqlite'}
           assert auth.get('authenticated') is False
           assert all(item.get('status') == 401 for item in protected.values()), protected
           assert 'Analyze in ChatGPT Pro' in checks['/assets/chatgpt-native.js']['body']
@@ -131,6 +150,8 @@ jobs:
               'chatgpt': chatgpt,
               'cost': cost,
               'wake': wake,
+              'deterministic_refresh': refresh_payload,
+              'operational_summary': summary,
               'security_headers': {
                   key: checks['/']['headers'].get(key)
                   for key in ('strict-transport-security', 'content-security-policy', 'x-content-type-options', 'referrer-policy')
