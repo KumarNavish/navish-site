@@ -1,0 +1,248 @@
+name: Link existing Render PostgreSQL
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'render-postgres-link-trigger.txt'
+      - '.github/workflows/link-render-postgres.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: link-existing-render-postgres
+  cancel-in-progress: false
+
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SERVICE_ID: srv-d9q541egekts73cgk2a0
+      POSTGRES_ID: dpg-d9q4t9u7bikc738g2ht0-a
+      ORIGIN: https://swiss-career-intelligence-os.onrender.com
+      RENDER_API_KEY_PRIMARY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_API_KEY_ALT: ${{ secrets.RENDER_API_TOKEN }}
+      RENDER_API_KEY_LEGACY: ${{ secrets.RENDER_TOKEN }}
+      DATABASE_URL_PRIMARY: ${{ secrets.RENDER_DATABASE_URL }}
+      DATABASE_URL_ALT: ${{ secrets.RENDER_POSTGRES_URL }}
+      DATABASE_URL_GENERIC: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Attach the existing database without exposing credentials
+        id: link
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          mkdir -p docs
+          api_key="${RENDER_API_KEY_PRIMARY:-${RENDER_API_KEY_ALT:-${RENDER_API_KEY_LEGACY:-}}}"
+          database_url="${DATABASE_URL_PRIMARY:-${DATABASE_URL_ALT:-${DATABASE_URL_GENERIC:-}}}"
+          source="preconfigured_repository_secret"
+
+          if [ -z "$database_url" ] && [ -n "$api_key" ]; then
+            source="render_connection_info_api"
+            http_code=$(curl --silent --show-error --max-time 60 \
+              --output /tmp/render-connection.json --write-out '%{http_code}' \
+              -H 'Accept: application/json' \
+              -H "Authorization: Bearer ${api_key}" \
+              "https://api.render.com/v1/postgres/${POSTGRES_ID}/connection-info")
+            if [ "$http_code" != '200' ]; then
+              python - <<PY
+          import json
+          from pathlib import Path
+          Path('docs/render-postgres-link.json').write_text(json.dumps({
+              'status': 'connection_info_request_failed',
+              'http_status': int('${http_code}'),
+              'service_id': '${SERVICE_ID}',
+              'postgres_id': '${POSTGRES_ID}',
+              'credentials_exposed': False,
+          }, indent=2) + '\n')
+          PY
+              exit 1
+            fi
+            database_url=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/render-connection.json').read_text())
+          value = payload.get('internalConnectionString', '')
+          if not value:
+              raise SystemExit('Internal connection string missing from Render response')
+          print(value)
+          PY
+            )
+          fi
+
+          if [ -z "$database_url" ]; then
+            python - <<PY
+          import json
+          from pathlib import Path
+          Path('docs/render-postgres-link.json').write_text(json.dumps({
+              'status': 'render_api_or_database_secret_not_configured',
+              'service_id': '${SERVICE_ID}',
+              'postgres_id': '${POSTGRES_ID}',
+              'credentials_exposed': False,
+          }, indent=2) + '\n')
+          PY
+            exit 1
+          fi
+
+          case "$database_url" in
+            postgres://*|postgresql://*|postgresql+psycopg://*) ;;
+            *)
+              python - <<PY
+          import json
+          from pathlib import Path
+          Path('docs/render-postgres-link.json').write_text(json.dumps({
+              'status': 'database_url_secret_invalid',
+              'service_id': '${SERVICE_ID}',
+              'postgres_id': '${POSTGRES_ID}',
+              'credentials_exposed': False,
+          }, indent=2) + '\n')
+          PY
+              exit 1
+              ;;
+          esac
+
+          if [ -z "$api_key" ]; then
+            python - <<PY
+          import json
+          from pathlib import Path
+          Path('docs/render-postgres-link.json').write_text(json.dumps({
+              'status': 'database_url_available_but_render_api_key_missing',
+              'service_id': '${SERVICE_ID}',
+              'postgres_id': '${POSTGRES_ID}',
+              'credentials_exposed': False,
+          }, indent=2) + '\n')
+          PY
+            exit 1
+          fi
+
+          DATABASE_URL_VALUE="$database_url" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path('/tmp/database-url-body.json').write_text(json.dumps({'value': os.environ['DATABASE_URL_VALUE']}))
+          PY
+
+          update_code=$(curl --silent --show-error --max-time 60 \
+            --output /tmp/render-env-response.json --write-out '%{http_code}' \
+            -X PUT \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer ${api_key}" \
+            --data-binary @/tmp/database-url-body.json \
+            "https://api.render.com/v1/services/${SERVICE_ID}/env-vars/DATABASE_URL")
+          rm -f /tmp/database-url-body.json /tmp/render-connection.json
+          unset database_url DATABASE_URL_VALUE
+          if [ "$update_code" != '200' ]; then
+            python - <<PY
+          import json
+          from pathlib import Path
+          Path('docs/render-postgres-link.json').write_text(json.dumps({
+              'status': 'database_url_update_failed',
+              'http_status': int('${update_code}'),
+              'service_id': '${SERVICE_ID}',
+              'postgres_id': '${POSTGRES_ID}',
+              'credentials_exposed': False,
+          }, indent=2) + '\n')
+          PY
+            exit 1
+          fi
+
+          deploy_code=$(curl --silent --show-error --max-time 60 \
+            --output /tmp/render-deploy-response.json --write-out '%{http_code}' \
+            -X POST \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer ${api_key}" \
+            --data '{}' \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploy")
+          if [ "$deploy_code" != '201' ] && [ "$deploy_code" != '202' ]; then
+            python - <<PY
+          import json
+          from pathlib import Path
+          Path('docs/render-postgres-link.json').write_text(json.dumps({
+              'status': 'deploy_trigger_failed',
+              'http_status': int('${deploy_code}'),
+              'service_id': '${SERVICE_ID}',
+              'postgres_id': '${POSTGRES_ID}',
+              'credentials_exposed': False,
+          }, indent=2) + '\n')
+          PY
+            exit 1
+          fi
+          deploy_id=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/render-deploy-response.json').read_text())
+          print(payload.get('id', ''))
+          PY
+          )
+          rm -f /tmp/render-deploy-response.json /tmp/render-env-response.json
+          unset api_key
+
+          ready_code=000
+          health_code=000
+          for attempt in $(seq 1 48); do
+            sleep 10
+            health_code=$(curl --silent --show-error --max-time 45 --output /tmp/health.json --write-out '%{http_code}' "$ORIGIN/healthz" || true)
+            ready_code=$(curl --silent --show-error --max-time 45 --output /tmp/ready.json --write-out '%{http_code}' "$ORIGIN/readyz" || true)
+            if [ "$ready_code" = '200' ]; then
+              break
+            fi
+          done
+
+          READY_STATUS="$ready_code" HEALTH_STATUS="$health_code" DEPLOY_ID="$deploy_id" LINK_SOURCE="$source" python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          def load(path):
+              try:
+                  return json.loads(Path(path).read_text())
+              except Exception:
+                  return None
+          ready_status = int(os.environ['READY_STATUS']) if os.environ['READY_STATUS'].isdigit() else None
+          health_status = int(os.environ['HEALTH_STATUS']) if os.environ['HEALTH_STATUS'].isdigit() else None
+          payload = {
+              'status': 'linked_and_ready' if ready_status == 200 else 'linked_but_not_ready',
+              'observed_at_utc': datetime.now(timezone.utc).isoformat(),
+              'service_id': os.environ['SERVICE_ID'],
+              'postgres_id': os.environ['POSTGRES_ID'],
+              'deploy_id': os.environ.get('DEPLOY_ID'),
+              'connection_source': os.environ.get('LINK_SOURCE'),
+              'healthz_status': health_status,
+              'readyz_status': ready_status,
+              'healthz': load('/tmp/health.json'),
+              'readyz': load('/tmp/ready.json'),
+              'credentials_exposed': False,
+          }
+          Path('docs/render-postgres-link.json').write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          test "$ready_code" = '200'
+
+      - name: Persist sanitized linkage evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f docs/render-postgres-link.json ]; then
+            mkdir -p docs
+            printf '%s\n' '{"status":"workflow_failed_before_evidence","credentials_exposed":false}' > docs/render-postgres-link.json
+          fi
+          git config user.name 'Swiss Career Intelligence Deployment Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git fetch origin main
+          git rebase origin/main || git rebase --abort
+          git add docs/render-postgres-link.json
+          git commit -m 'Record Render PostgreSQL attachment evidence' || exit 0
+          git push origin HEAD:main
+
+      - name: Enforce linkage result
+        if: always() && steps.link.outcome != 'success'
+        run: exit 1
