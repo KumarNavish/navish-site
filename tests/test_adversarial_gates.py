@@ -18,7 +18,7 @@ os.environ.setdefault("PAID_SERVICES_ALLOWED", "false")
 import pytest
 from fastapi.testclient import TestClient
 
-from app import app, intelligence_module, legacy
+from app import app, intelligence_module, legacy, runtime
 
 
 @pytest.fixture(autouse=True)
@@ -106,6 +106,37 @@ def test_zero_cost_status_is_machine_checkable() -> None:
         assert summary.status_code == 200
         assert summary.json()["zero_cost"]["cost_chf"] == 0
         assert summary.json()["external_actions_executed"] is False
+
+
+def test_bounded_refresh_uses_no_paid_model_or_external_action(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runtime,
+        "scan_sources",
+        lambda: {
+            "status": "completed",
+            "roles_discovered": 2,
+            "roles_changed": 1,
+            "roles_rejected": 1,
+            "model_requests": 0,
+            "external_actions_executed": False,
+        },
+    )
+    monkeypatch.setattr(runtime, "daily_priority", lambda: {"status": "completed", "actions": 2})
+    with TestClient(app) as client:
+        first = client.post("/api/scheduler/refresh", json={})
+        assert first.status_code == 200
+        payload = first.json()
+        assert payload["status"] == "completed"
+        assert payload["openai_requests"] == 0
+        assert payload["cost_chf"] == 0
+        assert payload["external_actions_executed"] is False
+        assert payload["scan"]["model_requests"] == 0
+
+        second = client.post("/api/scheduler/refresh", json={})
+        assert second.status_code == 200
+        assert second.json()["status"] == "rate_limited"
+        assert second.json()["cost_chf"] == 0
+        assert second.json()["external_actions_executed"] is False
 
 
 def test_expired_free_database_selects_ephemeral_zero_cost_fallback() -> None:
