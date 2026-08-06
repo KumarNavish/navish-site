@@ -1,1 +1,1 @@
-Run Chromium acceptance against the strict Swiss-only portfolio and PostgreSQL readiness code.
+Run Chromium acceptance for the workflow-first redesign at 390×844, 430×932, 820×1180 and 1440×1000; verify canonical role state, application updates, interview preparation, accessibility, no overflow, no console errors and no external hiring actions.
