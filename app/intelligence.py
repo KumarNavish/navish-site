@@ -78,7 +78,7 @@ SKILL_PATTERNS: dict[str, str] = {
     "experimental design": r"experiment|ablation|benchmark|evaluation",
     "distributed systems": r"distributed systems|kubernetes|spark|ray|multi-node",
     "large-scale training": r"large-scale training|distributed training|multi-gpu|multi-node training",
-    "c\+\+": r"c\+\+",
+    "c++": r"c\+\+",
     "robotics": r"robotics|imitation learning|reinforcement learning|embodied",
     "computer vision": r"computer vision|image|vision model|opencv",
 }

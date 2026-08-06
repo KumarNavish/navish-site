@@ -675,7 +675,6 @@ def install(legacy: Any) -> SimpleNamespace:
 
     legacy.app.middleware("http")(security_headers)
 
-    @legacy.app.on_event("startup")
     def automation_startup() -> None:
         with legacy.SessionLocal() as db:
             ensure_owner(db)
@@ -684,6 +683,8 @@ def install(legacy: Any) -> SimpleNamespace:
             db.commit()
         if os.getenv("SCIOS_WORKER_ENABLED", "true").lower() == "true":
             start_worker()
+
+    legacy.app.router.on_startup.append(automation_startup)
 
     @legacy.app.get("/healthz")
     def live_health() -> dict[str, Any]:
