@@ -38,12 +38,16 @@ jobs:
     env:
       PYTHONPATH: .
       DATABASE_URL: sqlite:////tmp/scios-ci.db
+      SCIOS_ENVIRONMENT: development
       SCIOS_WORKER_ENABLED: 'false'
       SCIOS_SESSION_SECURE_COOKIE: 'false'
       SCIOS_INTERNAL_SECRET: ci-internal-secret
       SCIOS_ACCESS_TOKEN: ci-private-access
       SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+      SCIOS_TEST_MODE: 'true'
+      SCIOS_TEST_ACCESS_TOKENS: ci-private-access,workspace-private-access
       OPENAI_ENABLED: 'false'
+      OPENAI_API_KEY: ''
       OPENAI_MAX_REQUESTS_PER_DAY: '0'
       OPENAI_MAX_MONTHLY_COST_USD: '0'
       PAID_SERVICES_ALLOWED: 'false'
