@@ -1,0 +1,23 @@
+name: Dispatch live release publisher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'publish-live-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch publish-live workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/publish-live.yml/dispatches" -f ref=main
