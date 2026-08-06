@@ -1,7 +1,7 @@
 {
-  "tested_commit": "d4b02238d384a4ac5a0d1928a86855705ecd0a37",
+  "tested_commit": "c926c679a91f55623b8936cf81148dd33316f506",
   "workflow": "Production validation",
-  "recorded_at_utc": "2026-08-06T11:25:34.497025+00:00",
+  "recorded_at_utc": "2026-08-06T11:27:11.936840+00:00",
   "result": "success",
   "python": "3.12.8",
   "checks": {
@@ -34,7 +34,7 @@
       "    return self.router.on_event(event_type)",
       "",
       "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
-      "7 passed, 2 warnings in 1.96s"
+      "7 passed, 2 warnings in 1.56s"
     ]
   }
 }
