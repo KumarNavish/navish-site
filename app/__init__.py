@@ -31,6 +31,7 @@ if _legacy_import is not None:
     app.router.routes.remove(_legacy_import)
 
 from . import intelligence as intelligence_module  # noqa: E402
+from .adversarial_gates import install_adversarial_gates  # noqa: E402
 from .backup import install_backup  # noqa: E402
 from .diagnostics import install_diagnostics  # noqa: E402
 from .manual_import import install_manual_import  # noqa: E402
@@ -39,11 +40,13 @@ from .quality_overlay import install_quality_routes, install_reasoning_gates  # 
 from .readiness import install_readiness  # noqa: E402
 from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
+from .zero_cost_status import install_zero_cost_status  # noqa: E402
 
 intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
-intelligence_module.MODEL_PROVIDER = "deterministic_gates_v6"
-intelligence_module.APP_REVISION = "2026.08.06-live.6"
+intelligence_module.MODEL_PROVIDER = "deterministic_gates_v7"
+intelligence_module.APP_REVISION = "2026.08.06-live.7"
 install_reasoning_gates(intelligence_module)
+install_adversarial_gates(intelligence_module)
 runtime = install(legacy)
 install_diagnostics(legacy, runtime)
 install_public_ops(legacy, runtime)
@@ -51,6 +54,7 @@ install_manual_import(legacy, runtime)
 install_quality_routes(legacy, runtime, intelligence_module)
 install_readiness(legacy)
 install_backup(legacy, runtime)
+install_zero_cost_status(legacy, intelligence_module)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
