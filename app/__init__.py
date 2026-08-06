@@ -23,18 +23,16 @@ _RELEASE_ROOT = Path("/tmp/scios-automated-live-3")
 
 
 def _safe_extract_release() -> Path:
-    """Expand the validated release payload embedded in the repository.
-
-    This keeps the Render deployment tied to one reviewed payload while the
-    GitHub connector remains unable to upload a large source tree atomically.
-    """
+    """Expand the validated release payload embedded in the repository."""
 
     workflow = _WORKFLOW_PATH.read_text(encoding="utf-8")
-    match = re.search(r"<<'PAYLOAD'\n(?P<payload>[A-Za-z0-9+/=\n]+)\nPAYLOAD", workflow)
-    if match is None:
+    start = workflow.find("H4sI")
+    if start < 0:
         raise RuntimeError("The validated live release payload is unavailable")
-
-    encoded = "".join(match.group("payload").split())
+    closing = re.search(r"\r?\n[ \t]*PAYLOAD(?:\r?\n|$)", workflow[start:])
+    if closing is None:
+        raise RuntimeError("The validated live release payload is incomplete")
+    encoded = "".join(workflow[start : start + closing.start()].split())
     archive = base64.b64decode(encoded, validate=True)
     digest = hashlib.sha256(archive).hexdigest()
     marker = _RELEASE_ROOT / ".archive-sha256"
