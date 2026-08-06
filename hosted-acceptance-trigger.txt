@@ -1,1 +1,1 @@
-Externally verify final PostgreSQL readiness, persistence after the second deployment, HTTPS security, source execution, and the bounded role portfolio.
+Externally verify the live.7 adversarial scoring release, free PostgreSQL readiness, CHF 0 controls, browser-held backup asset, authenticated backup boundary, HTTPS security, source execution, and the maximum-five role portfolio.
