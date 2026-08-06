@@ -51,9 +51,9 @@ def _run(root: Path) -> None:
             "SCIOS_DATABASE_URL": "sqlite:////tmp/scios-hosted-self-validation.db",
             "SCIOS_WORKER_ENABLED": "false",
             "SCIOS_SESSION_SECURE_COOKIE": "false",
-            "SCIOS_INTERNAL_SECRET": "hosted-self-validation-internal",
-            "SCIOS_ACCESS_TOKEN": "hosted-self-validation-access",
-            "SCIOS_OWNER_EMAIL": "validation@localhost.invalid",
+            "SCIOS_INTERNAL_SECRET": "ci-internal-secret",
+            "SCIOS_ACCESS_TOKEN": "ci-private-access",
+            "SCIOS_OWNER_EMAIL": "navish.kumar@unibas.ch",
             "SCIOS_HOSTED_SELF_VALIDATE": "false",
             "SCIOS_DATABASE_FALLBACK_ACTIVE": "false",
             "SCIOS_FREE_DATABASE_EXPIRES_AT": "",
@@ -92,9 +92,8 @@ def _run(root: Path) -> None:
         for path in js_files:
             source = path.read_text(errors="replace")
             if re.search(r"^(?:import|export) ", source, flags=re.MULTILINE):
-                command = [node, "--input-type=module", "--check"]
                 result = subprocess.run(
-                    command,
+                    [node, "--input-type=module", "--check"],
                     cwd=root,
                     env=env,
                     input=source,
