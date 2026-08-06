@@ -16,7 +16,8 @@ _API_ROOT = "https://api.render.com/v1"
 _CLI_CLIENT_ID = "429024F5E608930E2A65EF92591A25CC"
 _SERVICE_ID = "srv-d9q541egekts73cgk2a0"
 _POSTGRES_ID = "dpg-d9q4t9u7bikc738g2ht0-a"
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
+_START_LOCK = threading.Lock()
 _STATE: dict[str, Any] = {
     "status": "idle",
     "started_at": None,
@@ -44,7 +45,7 @@ def _request(
     token: str | None = None,
     device_oauth: bool = False,
 ) -> tuple[int, dict[str, Any]]:
-    headers = {"Accept": "application/json", "User-Agent": "SCIOS-render-link/1"}
+    headers = {"Accept": "application/json", "User-Agent": "SCIOS-render-link/2"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     content: bytes | None = None
@@ -92,7 +93,7 @@ def _fail(error: str) -> None:
 
 
 def _complete_link(grant: dict[str, Any]) -> None:
-    """Poll the account-owner grant and attach the DB without persisting secrets."""
+    """Poll account authorization and attach the DB without persisting secrets."""
 
     device_code = str(grant.get("device_code") or "")
     expires_in = max(60, int(grant.get("expires_in") or 600))
@@ -160,9 +161,33 @@ def _complete_link(grant: dict[str, Any]) -> None:
                 token=access_token,
             )
             database_url = ""
-            access_token = ""
-            if status not in {200, 201}:
+            if status != 200:
+                access_token = ""
                 _fail(f"database_url_update_http_{status}")
+                return
+
+            # Remove the temporary bridge controls before deploying the final
+            # PostgreSQL-backed process. Deletion is best-effort but audited.
+            cleanup_statuses: dict[str, int] = {}
+            for key in ("SCIOS_RENDER_LINK_AUTOSTART", "SCIOS_RENDER_LINK_NONCE"):
+                cleanup_status, _ = _request(
+                    client,
+                    "DELETE",
+                    f"/services/{_SERVICE_ID}/env-vars/{key}",
+                    token=access_token,
+                )
+                cleanup_statuses[key] = cleanup_status
+
+            deploy_status, deploy = _request(
+                client,
+                "POST",
+                f"/services/{_SERVICE_ID}/deploys",
+                payload={"clearCache": "do_not_clear"},
+                token=access_token,
+            )
+            access_token = ""
+            if deploy_status not in {200, 201, 202}:
+                _fail(f"deploy_trigger_http_{deploy_status}")
                 return
 
             with _LOCK:
@@ -175,11 +200,82 @@ def _complete_link(grant: dict[str, Any]) -> None:
                         "status": "database_attached_deployment_started",
                         "service_id": _SERVICE_ID,
                         "postgres_id": _POSTGRES_ID,
+                        "deploy_id": deploy.get("id"),
+                        "temporary_controls_removed": all(
+                            code in {204, 404} for code in cleanup_statuses.values()
+                        ),
                         "secret_exposed": False,
                     }
                 ),
                 flush=True,
             )
+    except Exception as exc:
+        _fail(type(exc).__name__)
+
+
+def _begin_authorization() -> dict[str, Any]:
+    with _START_LOCK:
+        with _LOCK:
+            if _STATE["status"] in {
+                "waiting_for_account_authorization",
+                "authorized_retrieving_database",
+                "authorized_attaching_database",
+                "database_attached_deployment_started",
+            } and _STATE["verification_url"]:
+                return _sanitize_state()
+
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            status, grant = _request(
+                client,
+                "POST",
+                "/device-grant",
+                payload={"client_id": _CLI_CLIENT_ID},
+                device_oauth=True,
+            )
+
+        verification_url = str(
+            grant.get("verification_uri_complete") or grant.get("verification_uri") or ""
+        )
+        device_code = str(grant.get("device_code") or "")
+        if status != 200 or not verification_url or not device_code:
+            raise RuntimeError(f"device_grant_http_{status}")
+
+        expires_in = max(60, int(grant.get("expires_in") or 600))
+        now = datetime.now(UTC)
+        with _LOCK:
+            _STATE.update(
+                {
+                    "status": "waiting_for_account_authorization",
+                    "started_at": now.isoformat(),
+                    "expires_at": datetime.fromtimestamp(
+                        now.timestamp() + expires_in, UTC
+                    ).isoformat(),
+                    "user_code": str(grant.get("user_code") or ""),
+                    "verification_url": verification_url,
+                    "error": None,
+                }
+            )
+        threading.Thread(target=_complete_link, args=(grant,), daemon=True).start()
+        print(
+            "SCIOS_RENDER_AUTHORIZATION "
+            + json.dumps(
+                {
+                    "verification_url": verification_url,
+                    "user_code": _STATE["user_code"],
+                    "expires_at": _STATE["expires_at"],
+                    "database_secret_exposed": False,
+                }
+            ),
+            flush=True,
+        )
+        return _sanitize_state()
+
+
+def _autostart_authorization() -> None:
+    if os.getenv("SCIOS_RENDER_LINK_AUTOSTART", "").lower() != "true":
+        return
+    try:
+        _begin_authorization()
     except Exception as exc:
         _fail(type(exc).__name__)
 
@@ -190,62 +286,17 @@ def install_render_postgres_link(legacy: Any) -> None:
     @legacy.app.get("/api/deployment/render-postgres/authorize", include_in_schema=False)
     def authorize_render_postgres(nonce: str = Query(..., min_length=24)) -> RedirectResponse:
         _authorized(nonce)
-        with _LOCK:
-            if _STATE["status"] in {
-                "waiting_for_account_authorization",
-                "authorized_retrieving_database",
-                "authorized_attaching_database",
-                "database_attached_deployment_started",
-            } and _STATE["verification_url"]:
-                return RedirectResponse(str(_STATE["verification_url"]), status_code=303)
-
         try:
-            with httpx.Client(timeout=30, follow_redirects=True) as client:
-                status, grant = _request(
-                    client,
-                    "POST",
-                    "/device-grant",
-                    payload={"client_id": _CLI_CLIENT_ID},
-                    device_oauth=True,
-                )
+            state = _begin_authorization()
         except Exception as exc:
-            raise HTTPException(502, f"Render authorization could not start: {type(exc).__name__}") from exc
-
-        verification_url = str(
-            grant.get("verification_uri_complete") or grant.get("verification_uri") or ""
-        )
-        device_code = str(grant.get("device_code") or "")
-        if status != 200 or not verification_url or not device_code:
-            raise HTTPException(502, "Render authorization could not start")
-
-        expires_in = max(60, int(grant.get("expires_in") or 600))
-        now = datetime.now(UTC)
-        with _LOCK:
-            _STATE.update(
-                {
-                    "status": "waiting_for_account_authorization",
-                    "started_at": now.isoformat(),
-                    "expires_at": datetime.fromtimestamp(now.timestamp() + expires_in, UTC).isoformat(),
-                    "user_code": str(grant.get("user_code") or ""),
-                    "verification_url": verification_url,
-                    "error": None,
-                }
-            )
-        threading.Thread(target=_complete_link, args=(grant,), daemon=True).start()
-        print(
-            "SCIOS_RENDER_LINK "
-            + json.dumps(
-                {
-                    "status": "waiting_for_account_authorization",
-                    "expires_at": _STATE["expires_at"],
-                    "secret_exposed": False,
-                }
-            ),
-            flush=True,
-        )
-        return RedirectResponse(verification_url, status_code=303)
+            raise HTTPException(
+                502, f"Render authorization could not start: {type(exc).__name__}"
+            ) from exc
+        return RedirectResponse(str(state["verification_url"]), status_code=303)
 
     @legacy.app.get("/api/deployment/render-postgres/status", include_in_schema=False)
     def render_postgres_link_status(nonce: str = Query(..., min_length=24)) -> dict[str, Any]:
         _authorized(nonce)
         return _sanitize_state()
+
+    legacy.app.router.on_startup.append(_autostart_authorization)
