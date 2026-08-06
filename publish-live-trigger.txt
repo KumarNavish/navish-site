@@ -1,0 +1,1 @@
+Trigger the validated Swiss Career Intelligence OS live release publisher.
