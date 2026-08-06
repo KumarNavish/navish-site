@@ -23,6 +23,13 @@ def install_zero_cost_status(legacy: Any, intelligence: Any) -> None:
 
     def cost_payload() -> dict[str, Any]:
         database_backend = "postgresql" if str(legacy.DB_URL).startswith("postgresql") else "sqlite"
+        fallback_active = os.getenv("SCIOS_DATABASE_FALLBACK_ACTIVE", "false").lower() == "true"
+        if fallback_active:
+            database_plan = "ephemeral SQLite continuity mode; restored from the user's private browser backup"
+        elif database_backend == "postgresql":
+            database_plan = "temporary free PostgreSQL"
+        else:
+            database_plan = "local SQLite"
         return {
             "mode": "zero_cost",
             "cost_chf": 0,
@@ -32,10 +39,13 @@ def install_zero_cost_status(legacy: Any, intelligence: Any) -> None:
             "openai_monthly_cost_budget_usd": 0,
             "reasoning": "deterministic evidence gates; ChatGPT may be used interactively without API billing",
             "hosting_plan": "free",
-            "database_plan": "temporary free PostgreSQL" if database_backend == "postgresql" else "local SQLite",
+            "database_backend": database_backend,
+            "database_plan": database_plan,
+            "database_fallback_active": fallback_active,
             "database_free_tier_expires_at": os.getenv("SCIOS_FREE_DATABASE_EXPIRES_AT") or None,
             "continuity": {
                 "automatic_browser_snapshot": True,
+                "automatic_empty_database_restore": True,
                 "portable_json_export": True,
                 "portable_json_restore": True,
                 "raw_cv_in_backup": False,
@@ -43,7 +53,7 @@ def install_zero_cost_status(legacy: Any, intelligence: Any) -> None:
                 "sessions_in_backup": False,
                 "external_actions_in_restore": False,
             },
-            "failure_policy": "Pause or require free-tier replacement; never upgrade or incur a charge automatically.",
+            "failure_policy": "Fall back to browser-restored ephemeral storage; never upgrade or incur a charge automatically.",
         }
 
     @legacy.app.get("/ops/cost")
