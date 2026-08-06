@@ -13,7 +13,8 @@
 
   function loadApplication() {
     const script = document.createElement("script");
-    script.src = "/assets/live.js?v=live8";
+    script.type = "module";
+    script.src = "/assets/live.js?v=live9";
     script.onerror = () => showPrivateLinkMessage("The live dashboard could not be loaded. Refresh once.");
     document.body.appendChild(script);
   }
