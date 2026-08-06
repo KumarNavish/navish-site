@@ -1,0 +1,103 @@
+name: Validate workflow redesign branch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'redesign-validation-trigger.txt'
+      - '.github/workflows/validate-redesign.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: validate-workflow-redesign
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-redesign-ci.db
+      SCIOS_WORKER_ENABLED: 'false'
+      SCIOS_SESSION_SECURE_COOKIE: 'false'
+      SCIOS_INTERNAL_SECRET: redesign-internal-secret
+      SCIOS_ACCESS_TOKEN: redesign-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+      OPENAI_ENABLED: 'false'
+      OPENAI_MAX_REQUESTS_PER_DAY: '0'
+      OPENAI_MAX_MONTHLY_COST_USD: '0'
+      PAID_SERVICES_ALLOWED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux-workflow-redesign
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Compile, validate modules and run all tests
+        id: validation
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          failed=0
+          git rev-parse HEAD > /tmp/tested-commit.txt
+          python -m compileall -q app.py app tests 2>&1 | tee /tmp/compile.txt || failed=1
+          : > /tmp/node.txt
+          for file in static/*.js; do
+            if grep -Eq '^(import|export) ' "$file"; then
+              node --input-type=module --check < "$file" >> /tmp/node.txt 2>&1 || failed=1
+            else
+              node --check "$file" >> /tmp/node.txt 2>&1 || failed=1
+            fi
+          done
+          cat /tmp/node.txt
+          pytest -q 2>&1 | tee /tmp/pytest.txt || failed=1
+          exit "$failed"
+      - name: Persist branch validation evidence
+        if: always()
+        env:
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def lines(path):
+              p = Path(path)
+              return p.read_text(errors='replace').splitlines()[-60:] if p.exists() else []
+
+          payload = {
+              'tested_commit': Path('/tmp/tested-commit.txt').read_text().strip(),
+              'workflow': 'Validate workflow redesign branch',
+              'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
+              'result': os.environ.get('VALIDATION_OUTCOME', 'unknown'),
+              'checks': {
+                  'python_compile': lines('/tmp/compile.txt'),
+                  'javascript_modules': lines('/tmp/node.txt'),
+                  'pytest': lines('/tmp/pytest.txt'),
+              },
+          }
+          Path('docs/ci-redesign-branch.json').write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'Swiss Career Intelligence CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin ux-workflow-redesign
+          git add docs/ci-redesign-branch.json
+          git commit -m 'Record workflow redesign validation evidence' || exit 0
+          git push origin HEAD:ux-workflow-redesign
+      - name: Enforce result
+        if: always() && steps.validation.outcome != 'success'
+        run: exit 1
