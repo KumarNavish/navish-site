@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import importlib.util
+import json
 import os
 import secrets
 import sys
@@ -49,6 +50,29 @@ install_public_ops(legacy, runtime)
 install_manual_import(legacy, runtime)
 install_quality_routes(legacy, runtime, intelligence_module)
 install_readiness(legacy)
+
+# Temporary, value-free deployment diagnostic. It emits only whether narrowly
+# relevant variables exist, never their values, so a pre-existing secure route
+# can be reused without duplicating credentials.
+_ENV_KEYS = (
+    "DATABASE_URL",
+    "SCIOS_DATABASE_URL",
+    "RENDER_API_KEY",
+    "RENDER_API_TOKEN",
+    "RENDER_TOKEN",
+    "RENDER_DATABASE_URL",
+    "RENDER_POSTGRES_URL",
+    "PGHOST",
+    "PGPORT",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGDATABASE",
+)
+print(
+    "SCIOS_ENV_PRESENCE "
+    + json.dumps({key: bool(os.getenv(key)) for key in _ENV_KEYS}, sort_keys=True),
+    flush=True,
+)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
