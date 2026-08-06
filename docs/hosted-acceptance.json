@@ -1,7 +1,7 @@
 {
-  "tested_commit": "2c1fb24fe0ae40f956cde2b18f7e2ec5b93b4b3c",
+  "tested_commit": "fd341a4d71f91dd34ffc28f872ae4c9fca7e7270",
   "origin": "https://swiss-career-intelligence-os.onrender.com",
-  "observed_at_utc": "2026-08-06T12:06:09.269232+00:00",
+  "observed_at_utc": "2026-08-06T13:19:38.273974+00:00",
   "tls": "validated by curl certificate verification",
   "probe_result": "success",
   "production_state": "blocked_by_postgresql_attachment",
@@ -26,7 +26,7 @@
   "ops_status": 200,
   "ops": {
     "status": "ok",
-    "checked_at": "2026-08-06T12:06:08.700890+00:00",
+    "checked_at": "2026-08-06T13:19:37.712294+00:00",
     "revision": "2026.08.06-live.5",
     "database_backend": "sqlite",
     "profile_evidence_count": 24,
@@ -43,8 +43,8 @@
     "last_execution": {
       "name": "Initial hosted source scan",
       "status": "success",
-      "started_at": "2026-08-06T12:00:02.509809+00:00",
-      "completed_at": "2026-08-06T12:00:53.616131+00:00",
+      "started_at": "2026-08-06T13:15:04.505744+00:00",
+      "completed_at": "2026-08-06T13:15:51.525372+00:00",
       "roles_discovered": 96,
       "roles_changed": 0,
       "roles_rejected": 1970,
