@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      PYTHONPATH: .
       DATABASE_URL: sqlite:////tmp/scios-ci.db
       SCIOS_WORKER_ENABLED: 'false'
       SCIOS_SESSION_SECURE_COOKIE: 'false'
