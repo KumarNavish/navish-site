@@ -5,11 +5,45 @@ import importlib.util
 import os
 import secrets
 import sys
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
+
+
+def _activate_expiry_fallback() -> None:
+    """Keep the app usable without a paid database after the free DB expires.
+
+    Render's free PostgreSQL database is temporary. On a fresh process starting
+    within one day of the configured expiry, switch to ephemeral SQLite rather
+    than failing or upgrading. The browser continuity layer then restores the
+    structured hiring state from the user's private local backup.
+    """
+
+    if os.getenv("SCIOS_ALLOW_EPHEMERAL_FALLBACK", "true").lower() != "true":
+        return
+    raw_expiry = os.getenv("SCIOS_FREE_DATABASE_EXPIRES_AT", "").strip()
+    if not raw_expiry:
+        return
+    try:
+        expiry = date.fromisoformat(raw_expiry)
+    except ValueError:
+        return
+    if datetime.now(UTC).date() < expiry - timedelta(days=1):
+        return
+    primary = os.getenv("DATABASE_URL") or os.getenv("SCIOS_DATABASE_URL") or ""
+    if primary.startswith(("postgres://", "postgresql://", "postgresql+")):
+        os.environ["SCIOS_PRIMARY_DATABASE_CONFIGURED"] = "true"
+        os.environ["DATABASE_URL"] = os.getenv(
+            "SCIOS_EPHEMERAL_DATABASE_URL",
+            "sqlite:////tmp/scios-zero-cost-fallback.db",
+        )
+        os.environ["SCIOS_DATABASE_FALLBACK_ACTIVE"] = "true"
+
+
+_activate_expiry_fallback()
 
 _LEGACY_PATH = Path(__file__).resolve().parent.parent / "app.py"
 _SPEC = importlib.util.spec_from_file_location("_scios_legacy_app", _LEGACY_PATH)
@@ -43,8 +77,8 @@ from .upgrade import install  # noqa: E402
 from .zero_cost_status import install_zero_cost_status  # noqa: E402
 
 intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
-intelligence_module.MODEL_PROVIDER = "deterministic_gates_v7"
-intelligence_module.APP_REVISION = "2026.08.06-live.7"
+intelligence_module.MODEL_PROVIDER = "deterministic_gates_v8"
+intelligence_module.APP_REVISION = "2026.08.06-live.8"
 install_reasoning_gates(intelligence_module)
 install_adversarial_gates(intelligence_module)
 runtime = install(legacy)
