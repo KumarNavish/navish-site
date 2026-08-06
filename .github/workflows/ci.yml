@@ -1,0 +1,103 @@
+name: Production validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'app/**'
+      - 'static/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - 'pytest.ini'
+      - 'ci-trigger.txt'
+      - '.github/workflows/ci.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scios-production-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: sqlite:////tmp/scios-ci.db
+      SCIOS_WORKER_ENABLED: 'false'
+      SCIOS_SESSION_SECURE_COOKIE: 'false'
+      SCIOS_INTERNAL_SECRET: ci-internal-secret
+      SCIOS_ACCESS_TOKEN: ci-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: pip
+      - name: Install deterministic dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Compile, validate JavaScript, and run the full suite
+        id: validation
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          failed=0
+          python -m compileall -q app.py app tests 2>&1 | tee /tmp/compile.txt || failed=1
+          node --check static/live.js 2>&1 | tee /tmp/node-live.txt || failed=1
+          node --check static/access.js 2>&1 | tee /tmp/node-access.txt || failed=1
+          node --check static/sw.js 2>&1 | tee /tmp/node-worker.txt || failed=1
+          pytest -q 2>&1 | tee /tmp/pytest.txt || failed=1
+          exit "$failed"
+      - name: Persist exact CI evidence
+        if: always()
+        env:
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def tail(path: str, limit: int = 30) -> list[str]:
+              file = Path(path)
+              return file.read_text(errors='replace').splitlines()[-limit:] if file.exists() else []
+
+          payload = {
+              'tested_commit': os.environ['GITHUB_SHA'],
+              'workflow': 'Production validation',
+              'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
+              'result': os.environ.get('VALIDATION_OUTCOME', 'unknown'),
+              'python': '3.12.8',
+              'checks': {
+                  'python_compile': tail('/tmp/compile.txt'),
+                  'node_live': tail('/tmp/node-live.txt'),
+                  'node_access': tail('/tmp/node-access.txt'),
+                  'node_service_worker': tail('/tmp/node-worker.txt'),
+                  'pytest': tail('/tmp/pytest.txt'),
+              },
+          }
+          Path('docs/ci-live.json').write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'Swiss Career Intelligence CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo 'Main advanced during validation; preserving results in workflow logs only.'
+            exit 0
+          fi
+          git add docs/ci-live.json
+          git commit -m 'Record production validation evidence' || exit 0
+          git push origin HEAD:main
+      - name: Enforce validation result
+        if: always() && steps.validation.outcome != 'success'
+        run: exit 1
