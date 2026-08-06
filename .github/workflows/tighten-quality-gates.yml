@@ -16,27 +16,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply exact high-conviction corrections
+      - name: Apply Swiss-only high-conviction corrections
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
+          def replace_block(text: str, start: str, end: str, replacement: str) -> str:
+              left = text.find(start)
+              if left < 0:
+                  raise SystemExit(f'missing block start: {start}')
+              right = text.find(end, left)
+              if right < 0:
+                  raise SystemExit(f'missing block end: {end}')
+              return text[:left] + replacement.rstrip() + '\n\n' + text[right + 2:]
+
           intelligence = Path('app/intelligence.py')
           text = intelligence.read_text()
-          old = '''def swiss_eligible(location: str, description: str = "") -> bool:
-    haystack = f" {location} {description[:2500]} ".lower()
-    if any(place in haystack for place in SWISS_PLACES):
-        return True
-    return "remote" in haystack and ("switzerland" in haystack or "swiss" in haystack)
-'''
-          new = '''def swiss_eligible(location: str, description: str = "") -> bool:
+          text = replace_block(text, 'def swiss_eligible(', '\n\ndef target_role(', '''def swiss_eligible(location: str, description: str = "") -> bool:
     """Require structured Swiss location evidence before accepting a role.
 
-    Description text is deliberately ignored when a structured non-Swiss
-    location is present. This prevents company-wide boilerplate mentioning a
-    Swiss office from converting a Paris, London, or US role into a Swiss role.
+    Company boilerplate is ignored whenever a structured non-Swiss location is
+    present, so a Paris or London role cannot pass merely by mentioning Zurich.
     """
 
     structured = " ".join(str(location or "").split()).lower()
@@ -57,25 +59,10 @@ jobs:
     return any(phrase in fallback for phrase in (
         "location: switzerland", "location: zurich", "location: zürich",
         "based in switzerland", "based in zurich", "based in zürich",
-    ))
-'''
-          if old not in text:
-              raise SystemExit('swiss_eligible target not found')
-          text = text.replace(old, new, 1)
-          old = '''def extract_years(text: str) -> int:
-    values = [int(value) for value in re.findall(r"(?:at least|minimum|min\\.?|\\+)\\s*(\\d{1,2})\\s*(?:\\+\\s*)?years?|(?:\\b)(\\d{1,2})\\s*\\+?\\s*years?", text.lower()) for value in value if value]
-    return max(values, default=0)
-'''
-          new = '''def extract_years(text: str) -> int:
-    return _years(text)
-'''
-          if old not in text:
-              raise SystemExit('extract_years target not found')
-          text = text.replace(old, new, 1)
-          old = '''def serious(analysis: dict[str, Any]) -> bool:
-    return analysis["decision"] in {"Strongly pursue", "Pursue", "Investigate one blocker"} and not analysis["severe_seniority_mismatch"]
-'''
-          new = '''def serious(analysis: dict[str, Any]) -> bool:
+    ))''')
+          text = replace_block(text, 'def extract_years(', '\n\ndef _years(', '''def extract_years(text: str) -> int:
+    return _years(text)''')
+          text = replace_block(text, 'def serious(', '\n\ndef application_package(', '''def serious(analysis: dict[str, Any]) -> bool:
     """Return true only for a compact, defensible attention portfolio."""
 
     interview = analysis.get("interview_probability_range") or [0, 0]
@@ -88,67 +75,39 @@ jobs:
         and max(interview or [0]) >= 35
         and analysis.get("mandatory_evidence_strength", 0) >= 50
         and compensation.get("high", 0) >= 120000
-    )
-'''
-          if old not in text:
-              raise SystemExit('serious target not found')
-          intelligence.write_text(text.replace(old, new, 1))
+    )''')
+          intelligence.write_text(text)
 
           upgrade = Path('app/upgrade.py')
           text = upgrade.read_text()
-          old = '''            if analysis.get("decision") not in {"Strongly pursue", "Pursue", "Investigate one blocker"}:
+          replacements = [
+              ('''            if analysis.get("decision") not in {"Strongly pursue", "Pursue", "Investigate one blocker"}:
                 continue
-            ranked.append((job, analysis))
-'''
-          new = '''            if not intelligence.serious(analysis):
+            ranked.append((job, analysis))''', '''            if not intelligence.serious(analysis):
                 continue
-            ranked.append((job, analysis))
-'''
-          if old not in text:
-              raise SystemExit('prioritize gate target not found')
-          text = text.replace(old, new, 1)
-          text = text.replace('                    observed_identifiers: set[str] = set()\n', '                    qualified_identifiers: set[str] = set()\n', 1)
-          text = text.replace('                        observed_identifiers.add(identifier)\n', '', 1)
-          old = '''                        if len(raw.get("description", "")) < 120:
+            ranked.append((job, analysis))'''),
+              ('                    observed_identifiers: set[str] = set()', '                    qualified_identifiers: set[str] = set()'),
+              ('                        observed_identifiers.add(identifier)\n', ''),
+              ('''                        if len(raw.get("description", "")) < 120:
                             rejected += 1
                             continue
-                        analysis = intelligence.analyze_role(raw, evidence, profile.salary_floor_base)
-'''
-          new = '''                        if len(raw.get("description", "")) < 120:
+                        analysis = intelligence.analyze_role(raw, evidence, profile.salary_floor_base)''', '''                        if len(raw.get("description", "")) < 120:
                             rejected += 1
                             continue
                         qualified_identifiers.add(identifier)
-                        analysis = intelligence.analyze_role(raw, evidence, profile.salary_floor_base)
-'''
-          if old not in text:
-              raise SystemExit('qualified identifier insertion target not found')
-          text = text.replace(old, new, 1)
-          old = '''                        source_row.accepted += 1
+                        analysis = intelligence.analyze_role(raw, evidence, profile.salary_floor_base)'''),
+              ('''                        source_row.accepted += 1
                         create_or_update_suggested_application(db, user.id, job, analysis)
                         if intelligence.serious(analysis):
-                            accepted_jobs.append((job, analysis))
-'''
-          new = '''                        source_row.accepted += 1
+                            accepted_jobs.append((job, analysis))''', '''                        source_row.accepted += 1
                         if intelligence.serious(analysis):
-                            accepted_jobs.append((job, analysis))
-'''
-          if old not in text:
-              raise SystemExit('per-role application target not found')
-          text = text.replace(old, new, 1)
-          old = '''                        if meta.source_identifier not in observed_identifiers:
-                            meta.active_status = "Closed or removed from official source"
-'''
-          new = '''                        if meta.source_identifier not in qualified_identifiers:
-                            meta.active_status = "Closed, removed, or excluded by Swiss/fit gate"
-'''
-          if old not in text:
-              raise SystemExit('source deactivation target not found')
-          text = text.replace(old, new, 1)
-          old = '''                accepted_jobs.sort(key=lambda pair: (pair[1].get("hiring_opportunity_value", 0), pair[1].get("fit_score", 0)), reverse=True)
+                            accepted_jobs.append((job, analysis))'''),
+              ('''                        if meta.source_identifier not in observed_identifiers:
+                            meta.active_status = "Closed or removed from official source"''', '''                        if meta.source_identifier not in qualified_identifiers:
+                            meta.active_status = "Closed, removed, or excluded by Swiss/fit gate"'''),
+              ('''                accepted_jobs.sort(key=lambda pair: (pair[1].get("hiring_opportunity_value", 0), pair[1].get("fit_score", 0)), reverse=True)
                 # An explicit conservative internal rule may prepare—but never submit—the strongest verified role.
-                auto_candidate = next((pair for pair in accepted_jobs if pair[1]["decision"] in {"Strongly pursue", "Pursue"} and pair[1]["compensation"]["high"] >= profile.salary_floor_base and pair[1]["fit_score"] >= 50), None)
-'''
-          new = '''                accepted_jobs.sort(key=lambda pair: (pair[1].get("hiring_opportunity_value", 0), pair[1].get("fit_score", 0)), reverse=True)
+                auto_candidate = next((pair for pair in accepted_jobs if pair[1]["decision"] in {"Strongly pursue", "Pursue"} and pair[1]["compensation"]["high"] >= profile.salary_floor_base and pair[1]["fit_score"] >= 50), None)''', '''                accepted_jobs.sort(key=lambda pair: (pair[1].get("hiring_opportunity_value", 0), pair[1].get("fit_score", 0)), reverse=True)
                 attention_portfolio = accepted_jobs[:5]
                 portfolio_ids = {job.id for job, _ in attention_portfolio}
                 for job, analysis in attention_portfolio:
@@ -158,18 +117,12 @@ jobs:
                         app_row.state = "Monitor"
                         app_row.next_action = "Outside the current five-role attention portfolio; reassess only after material change."
                 # A conservative internal rule may prepare—but never submit—the strongest verified role.
-                auto_candidate = next((pair for pair in attention_portfolio if pair[1]["decision"] in {"Strongly pursue", "Pursue"} and pair[1]["compensation"]["high"] >= profile.salary_floor_base), None)
-'''
-          if old not in text:
-              raise SystemExit('attention portfolio target not found')
-          text = text.replace(old, new, 1)
-          old = '''    @legacy.app.get("/api/live/roles")
+                auto_candidate = next((pair for pair in attention_portfolio if pair[1]["decision"] in {"Strongly pursue", "Pursue"} and pair[1]["compensation"]["high"] >= profile.salary_floor_base), None)'''),
+              ('''    @legacy.app.get("/api/live/roles")
     def live_roles(user: Any = Depends(legacy.current_user), db: Session = Depends(legacy.db_dep)) -> list[dict[str, Any]]:
         jobs = db.scalars(select(legacy.Job).where(legacy.Job.user_id == user.id).order_by(legacy.Job.score.desc(), legacy.Job.created_at.desc())).all()
         rows = [serialize_job(db, job) for job in jobs]
-        return [row for row in rows if row["source_status"] != "Closed or removed from official source" and row["decision"] != "Do not pursue"][:15]
-'''
-          new = '''    @legacy.app.get("/api/live/roles")
+        return [row for row in rows if row["source_status"] != "Closed or removed from official source" and row["decision"] != "Do not pursue"][:15]''', '''    @legacy.app.get("/api/live/roles")
     def live_roles(user: Any = Depends(legacy.current_user), db: Session = Depends(legacy.db_dep)) -> list[dict[str, Any]]:
         ranked: list[dict[str, Any]] = []
         for job in db.scalars(select(legacy.Job).where(legacy.Job.user_id == user.id)).all():
@@ -182,58 +135,45 @@ jobs:
                 continue
             ranked.append(serialize_job(db, job))
         ranked.sort(key=lambda row: (row.get("hiring_opportunity_value", 0), row.get("fit_score", 0)), reverse=True)
-        return ranked[:10]
-'''
-          if old not in text:
-              raise SystemExit('live roles target not found')
-          text = text.replace(old, new, 1)
-          old = '''        rows = db.scalars(select(legacy.Application).where(legacy.Application.user_id == user.id).order_by(legacy.Application.id.desc())).all()
-'''
-          new = '''        rows = db.scalars(select(legacy.Application).where(
+        return ranked[:10]'''),
+              ('''        rows = db.scalars(select(legacy.Application).where(legacy.Application.user_id == user.id).order_by(legacy.Application.id.desc())).all()''', '''        rows = db.scalars(select(legacy.Application).where(
             legacy.Application.user_id == user.id,
             legacy.Application.state.notin_(("Monitor", "Closed", "Withdrawn")),
-        ).order_by(legacy.Application.id.desc()).limit(10)).all()
-'''
-          if old not in text:
-              raise SystemExit('applications query target not found')
-          upgrade.write_text(text.replace(old, new, 1))
+        ).order_by(legacy.Application.id.desc()).limit(10)).all()'''),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'upgrade target not found: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+          upgrade.write_text(text)
 
           public_ops = Path('app/public_ops.py')
           text = public_ops.read_text()
           if 'from . import intelligence\n' not in text:
               text = text.replace('from sqlalchemy import func, select, text\n', 'from sqlalchemy import func, select, text\n\nfrom . import intelligence\n', 1)
           old = '''                if analysis.get("decision") in {"Strongly pursue", "Pursue", "Investigate one blocker"}:
-                    serious_roles += 1
-'''
-          new = '''                if intelligence.serious(analysis):
-                    serious_roles += 1
-'''
+                    serious_roles += 1'''
           if old not in text:
               raise SystemExit('public ops serious target not found')
-          public_ops.write_text(text.replace(old, new, 1))
+          public_ops.write_text(text.replace(old, '''                if intelligence.serious(analysis):
+                    serious_roles += 1''', 1))
 
           tests = Path('tests/test_live_system.py')
           text = tests.read_text()
           old = '''    assert intelligence.swiss_eligible("Zürich, Switzerland") is True
-    assert intelligence.swiss_eligible("London, United Kingdom") is False
-'''
-          new = '''    assert intelligence.swiss_eligible("Zürich, Switzerland") is True
+    assert intelligence.swiss_eligible("London, United Kingdom") is False'''
+          if old not in text:
+              raise SystemExit('Swiss location test target not found')
+          text = text.replace(old, '''    assert intelligence.swiss_eligible("Zürich, Switzerland") is True
     assert intelligence.swiss_eligible("London, United Kingdom") is False
     assert intelligence.swiss_eligible("Paris", "Our company also has offices in Zurich and London") is False
-    assert intelligence.swiss_eligible("Remote", "This role may be performed while resident in Switzerland") is True
-'''
-          if old not in text:
-              raise SystemExit('Swiss location tests target not found')
-          text = text.replace(old, new, 1)
+    assert intelligence.swiss_eligible("Remote", "This role may be performed while resident in Switzerland") is True''', 1)
           old = '''        assert applications
-        assert all(row.external_action_executed is False for row in applications)
-'''
-          new = '''        assert 1 <= len(applications) <= 5
-        assert all(row.external_action_executed is False for row in applications)
-'''
+        assert all(row.external_action_executed is False for row in applications)'''
           if old not in text:
               raise SystemExit('portfolio size test target not found')
-          tests.write_text(text.replace(old, new, 1))
+          tests.write_text(text.replace(old, '''        assert 1 <= len(applications) <= 5
+        assert all(row.external_action_executed is False for row in applications)''', 1))
           PY
           python -W error::SyntaxWarning -m compileall -q app tests
           git config user.name 'Swiss Career Intelligence Maintainer'
