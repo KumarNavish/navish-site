@@ -1,0 +1,59 @@
+{
+  "release": "chatgpt-native-zero-api",
+  "version": "0.6.0",
+  "production_url": "https://swiss-career-intelligence-os.onrender.com",
+  "hosted_validation": {
+    "validated_revision": "f49f52837b0fd3460dbfafd9826c3279aadfdebd",
+    "deploy_id": "dep-d9qfncugekts73955hf0",
+    "started_at_utc": "2026-08-06T21:26:17.015629+00:00",
+    "completed_at_utc": "2026-08-06T21:28:08.597826+00:00",
+    "python": "3.12.8",
+    "status": "passed",
+    "checks": {
+      "python_compile": {
+        "passed": true,
+        "returncode": 0
+      },
+      "javascript_syntax": {
+        "passed": true,
+        "files_checked": 9,
+        "failures": []
+      },
+      "pytest": {
+        "passed": true,
+        "passed_count": 31,
+        "failed_count": 0,
+        "returncode": 0,
+        "summary": "31 passed in 83.31s"
+      }
+    }
+  },
+  "production_boundaries": {
+    "openai_api_enabled": false,
+    "openai_api_requests": 0,
+    "api_cost_chf": 0,
+    "paid_services_allowed": false,
+    "external_hiring_actions_executed": false,
+    "read_only_chatgpt_app": true,
+    "interactive_chatgpt_pro_handoff": true,
+    "server_can_select_chatgpt_model": false
+  },
+  "deployment": {
+    "provider": "Render",
+    "region": "Frankfurt",
+    "web_plan": "free",
+    "database": "Render PostgreSQL 16 free",
+    "database_expiry": "2026-09-05",
+    "ephemeral_sqlite_fallback_configured": true,
+    "one_shot_self_validation_disabled_after_pass": true
+  },
+  "safety": {
+    "application_submission_tool_present": false,
+    "outbound_email_tool_present": false,
+    "outbound_message_tool_present": false,
+    "referral_request_tool_present": false,
+    "meeting_acceptance_tool_present": false,
+    "negotiation_tool_present": false,
+    "offer_acceptance_tool_present": false
+  }
+}
