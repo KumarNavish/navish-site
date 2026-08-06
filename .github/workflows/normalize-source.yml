@@ -1,0 +1,52 @@
+name: Normalize production source warnings
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'normalize-source-trigger.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact warning-removal edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          intelligence = Path('app/intelligence.py')
+          text = intelligence.read_text()
+          old = '    "c\\\\+\\\\+": r"c\\\\+\\\\+",'
+          new = '    "c++": r"c\\\\+\\\\+",'
+          if old not in text:
+              raise SystemExit('Expected C++ key was not found')
+          intelligence.write_text(text.replace(old, new, 1))
+
+          upgrade = Path('app/upgrade.py')
+          text = upgrade.read_text()
+          decorator = '    @legacy.app.on_event("startup")\n    def automation_startup() -> None:'
+          replacement = '    def automation_startup() -> None:'
+          if decorator not in text:
+              raise SystemExit('Expected startup decorator was not found')
+          text = text.replace(decorator, replacement, 1)
+          anchor = '        if os.getenv("SCIOS_WORKER_ENABLED", "true").lower() == "true":\n            start_worker()\n\n    @legacy.app.get("/healthz")'
+          inserted = '        if os.getenv("SCIOS_WORKER_ENABLED", "true").lower() == "true":\n            start_worker()\n\n    legacy.app.router.on_startup.append(automation_startup)\n\n    @legacy.app.get("/healthz")'
+          if anchor not in text:
+              raise SystemExit('Expected startup registration anchor was not found')
+          upgrade.write_text(text.replace(anchor, inserted, 1))
+          PY
+          python -W error::SyntaxWarning -m compileall -q app
+          git config user.name 'Swiss Career Intelligence Maintainer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/intelligence.py app/upgrade.py
+          git commit -m 'Remove production parser and startup deprecation warnings'
+          git push origin HEAD:main
