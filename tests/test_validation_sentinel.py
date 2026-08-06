@@ -1,4 +1,4 @@
 def test_final_redesign_validation_sentinel() -> None:
-    """Force the complete workflow against the exact current production tree."""
+    """Force unit, API and browser validation against production-equivalent code."""
 
     assert True
