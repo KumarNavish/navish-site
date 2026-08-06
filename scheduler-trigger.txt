@@ -1,1 +1,1 @@
-Trigger the free hosted scheduler and capture the final deployed acceptance snapshot.
+Trigger the hosted scheduler, verify strict Swiss role filtering, and capture PostgreSQL-readiness state.
