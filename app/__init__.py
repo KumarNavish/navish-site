@@ -19,13 +19,26 @@ if _SPEC is None or _SPEC.loader is None:
 legacy = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = legacy
 _SPEC.loader.exec_module(legacy)
-
 app = legacy.app
+
+# The original SPA fallback was registered before the production upgrade APIs.
+# Move it behind the new routes so /api/live/* cannot be swallowed by the
+# catch-all HTML handler.
+_spa_fallback = next((route for route in app.router.routes if getattr(route, "path", None) == "/{path:path}"), None)
+if _spa_fallback is not None:
+    app.router.routes.remove(_spa_fallback)
+
+from .upgrade import install  # noqa: E402
+
+runtime = install(legacy)
+
+if _spa_fallback is not None:
+    app.router.routes.append(_spa_fallback)
 
 
 @app.middleware("http")
 async def passwordless_private_access(request: Request, call_next):
-    """Exchange a private one-click access token for the existing secure session cookie."""
+    """Exchange a private one-click access token for the secure owner session."""
 
     if request.url.path != "/api/auth/access" or request.method != "POST":
         return await call_next(request)
