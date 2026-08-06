@@ -4,23 +4,63 @@
   const LOCAL_KEY = "scios_structured_backup_v1";
   const LAST_KEY = "scios_structured_backup_time_v1";
   const DAY = 24 * 60 * 60 * 1000;
+  let snapshotInFlight = false;
+  let cachedCost = null;
 
   function notify(message) {
     const toast = document.querySelector("#toast");
     if (!toast) return;
     toast.textContent = message;
     toast.classList.add("show");
-    window.setTimeout(() => toast.classList.remove("show"), 3200);
+    window.setTimeout(() => toast.classList.remove("show"), 3600);
   }
 
-  async function fetchBackup() {
-    const response = await fetch("/api/backup/export", {
+  async function fetchJson(url, options = {}) {
+    const response = await fetch(url, {
       credentials: "same-origin",
       cache: "no-store",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(options.headers || {}) },
+      ...options,
     });
-    if (!response.ok) throw new Error(`Backup export failed (${response.status})`);
-    return response.json();
+    let payload = null;
+    try { payload = await response.json(); } catch (_) {}
+    if (!response.ok) throw new Error(payload?.detail || `${url} failed (${response.status})`);
+    return payload;
+  }
+
+  function fetchBackup() {
+    return fetchJson("/api/backup/export");
+  }
+
+  async function fetchCost() {
+    try {
+      cachedCost = await fetchJson("/ops/cost");
+      return cachedCost;
+    } catch (_) {
+      return cachedCost;
+    }
+  }
+
+  function parseLocalBackup() {
+    try {
+      const stored = localStorage.getItem(LOCAL_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function payloadWeight(payload) {
+    if (!payload || typeof payload !== "object") return 0;
+    const profile = payload.profile || {};
+    return (
+      (Array.isArray(profile.evidence) ? profile.evidence.length : 0)
+      + (Array.isArray(payload.jobs) ? payload.jobs.length * 4 : 0)
+      + (Array.isArray(payload.applications) ? payload.applications.length * 3 : 0)
+      + (Array.isArray(payload.practice) ? payload.practice.length : 0)
+      + (Array.isArray(payload.actions) ? payload.actions.length : 0)
+      + (profile.active ? 2 : 0)
+    );
   }
 
   function saveLocally(payload) {
@@ -48,38 +88,55 @@
     const text = saveLocally(payload);
     if (downloadFile) download(text);
     notify(downloadFile ? "Private structured backup downloaded" : "Private browser backup refreshed");
-    updateBadge();
+    await updateBadge();
   }
 
-  async function restorePayload(payload) {
-    const response = await fetch("/api/backup/import", {
+  async function restorePayload(payload, { automatic = false } = {}) {
+    const result = await fetchJson("/api/backup/import", {
       method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    let result = null;
-    try { result = await response.json(); } catch (_) {}
-    if (!response.ok) throw new Error(result?.detail || `Backup restore failed (${response.status})`);
+    if (result.external_actions_executed !== false || result.cost_chf !== 0) {
+      throw new Error("Restore safety boundary was not confirmed");
+    }
     saveLocally(payload);
-    notify("Structured hiring state restored; no external action was performed");
-    window.setTimeout(() => location.reload(), 900);
+    notify(
+      automatic
+        ? "Free database continuity restored automatically; no external action was performed"
+        : "Structured hiring state restored; no external action was performed",
+    );
+    window.setTimeout(() => location.reload(), 1000);
   }
 
-  function openDialog() {
+  function expiryText(cost) {
+    const value = cost?.database_free_tier_expires_at;
+    if (!value) return "";
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return "";
+    const days = Math.ceil((parsed.getTime() - Date.now()) / DAY);
+    if (days < 0) return "Free database period ended; continuity mode is active.";
+    if (days <= 7) return `Free database changes in ${days} day${days === 1 ? "" : "s"}; keep the portable backup.`;
+    return `Current free database expires ${parsed.toLocaleDateString("en-CH")}.`;
+  }
+
+  async function openDialog() {
     const dialog = document.querySelector("#dialog");
     const body = document.querySelector("#dialog-body");
     if (!dialog || !body) return;
     const last = localStorage.getItem(LAST_KEY);
+    const cost = await fetchCost();
+    const databaseNote = expiryText(cost);
     body.innerHTML = `<div class="dialog-card">
       <h2>Free continuity backup</h2>
       <p>This preserves structured profile evidence, verified roles, application state, preparation and Today actions. Raw CV files, passwords, sessions and private access tokens are excluded.</p>
-      <div class="notice info"><strong>CHF 0 protection</strong><p>The app uses a temporary free database. A same-device browser copy is refreshed automatically, and a portable JSON file gives you an independent restore path.</p></div>
+      <div class="notice info"><strong>CHF 0 protection</strong><p>No paid model or hosting upgrade is allowed. The same-device browser copy is refreshed automatically, a portable JSON file gives you an independent restore path, and an empty fallback database is recovered automatically when possible.</p></div>
+      ${databaseNote ? `<div class="notice warning"><strong>Free-tier continuity</strong><p>${databaseNote}</p></div>` : ""}
+      <p class="meta">Database mode: ${cost?.database_plan || "Free mode"}</p>
       <p class="meta">Last browser copy: ${last ? new Date(last).toLocaleString("en-CH") : "Not created yet"}</p>
       <div class="actions">
         <button class="primary" id="backup-download">Download current backup</button>
-        <button class="secondary" id="backup-restore-browser" ${localStorage.getItem(LOCAL_KEY) ? "" : "disabled"}>Restore browser copy</button>
+        <button class="secondary" id="backup-restore-browser" ${parseLocalBackup() ? "" : "disabled"}>Restore browser copy</button>
         <label class="secondary" style="display:inline-flex;align-items:center;cursor:pointer">Restore JSON file<input id="backup-file" type="file" accept="application/json,.json" hidden></label>
         <button class="secondary" id="backup-close">Close</button>
       </div>
@@ -92,9 +149,9 @@
     const browserButton = document.querySelector("#backup-restore-browser");
     if (browserButton) browserButton.onclick = async () => {
       try {
-        const stored = localStorage.getItem(LOCAL_KEY);
+        const stored = parseLocalBackup();
         if (!stored) throw new Error("No browser backup is available");
-        await restorePayload(JSON.parse(stored));
+        await restorePayload(stored);
       } catch (error) { notify(error.message || "Restore failed"); }
     };
     document.querySelector("#backup-file").onchange = async (event) => {
@@ -107,11 +164,14 @@
     };
   }
 
-  function updateBadge() {
+  async function updateBadge() {
     const badge = document.querySelector("#zero-cost-continuity");
     if (!badge) return;
+    const cost = await fetchCost();
     const last = localStorage.getItem(LAST_KEY);
-    badge.textContent = last ? "CHF 0 · backup protected" : "CHF 0 · create backup";
+    const fallback = cost?.database_fallback_active ? " · continuity mode" : "";
+    badge.textContent = last ? `CHF 0 · backup protected${fallback}` : `CHF 0 · create backup${fallback}`;
+    badge.title = expiryText(cost) || "No paid service or API is enabled";
   }
 
   function installControls() {
@@ -126,21 +186,41 @@
     updateBadge();
   }
 
-  async function automaticSnapshot() {
-    const last = Date.parse(localStorage.getItem(LAST_KEY) || "0");
-    if (Date.now() - last < DAY) return;
-    try { await createBackup(false); } catch (_) { /* next authenticated load retries */ }
+  async function reconcileContinuity() {
+    if (snapshotInFlight) return;
+    snapshotInFlight = true;
+    try {
+      const [remote, cost] = await Promise.all([fetchBackup(), fetchCost()]);
+      const local = parseLocalBackup();
+      const remoteWeight = payloadWeight(remote);
+      const localWeight = payloadWeight(local);
+      const remoteEmpty = remoteWeight <= 2 && (remote.jobs || []).length === 0 && (remote.applications || []).length === 0;
+      const shouldRecover = local && localWeight >= 5 && localWeight > remoteWeight && (remoteEmpty || cost?.database_fallback_active);
+      if (shouldRecover) {
+        await restorePayload(local, { automatic: true });
+        return;
+      }
+      const last = Date.parse(localStorage.getItem(LAST_KEY) || "0");
+      if (!local || Date.now() - last >= DAY || remoteWeight > localWeight) {
+        saveLocally(remote);
+        await updateBadge();
+      }
+    } catch (_) {
+      // The next authenticated load retries. Existing local state is retained.
+    } finally {
+      snapshotInFlight = false;
+    }
   }
 
   const observer = new MutationObserver(() => {
     const app = document.querySelector("#app");
     if (!app || app.hidden) return;
     installControls();
-    automaticSnapshot();
+    reconcileContinuity();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
   window.addEventListener("load", () => {
     installControls();
-    automaticSnapshot();
+    reconcileContinuity();
   });
 })();
