@@ -1,1 +1,1 @@
-Externally verify HTTPS, security headers, strict role portfolio, and the PostgreSQL readiness boundary.
+Externally verify the current HTTPS service, security controls, one-click Render authorization bridge, and PostgreSQL readiness boundary.
