@@ -19,7 +19,7 @@ from sqlalchemy import select
 _REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 _WORKFLOW_PATH = _REPOSITORY_ROOT / ".github" / "workflows" / "publish-live.yml"
 _RELEASE_ROOT = Path("/tmp/scios-automated-live-3")
-_BASE64_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+_BASE64_DATA = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
 
 
 def _safe_extract_release() -> Path:
@@ -30,7 +30,8 @@ def _safe_extract_release() -> Path:
     end = workflow.find("=", start)
     if start < 0 or end < 0:
         raise RuntimeError("The validated live release payload is unavailable")
-    encoded = "".join(char for char in workflow[start : end + 1] if char in _BASE64_ALPHABET)
+    unpadded = "".join(char for char in workflow[start:end] if char in _BASE64_DATA)
+    encoded = unpadded + ("=" * (-len(unpadded) % 4))
     archive = base64.b64decode(encoded, validate=True)
     digest = hashlib.sha256(archive).hexdigest()
     marker = _RELEASE_ROOT / ".archive-sha256"
