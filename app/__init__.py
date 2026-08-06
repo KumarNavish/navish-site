@@ -34,14 +34,17 @@ from . import intelligence as intelligence_module  # noqa: E402
 from .diagnostics import install_diagnostics  # noqa: E402
 from .manual_import import install_manual_import  # noqa: E402
 from .public_ops import install_public_ops  # noqa: E402
+from .quality_overlay import install_quality_routes, install_reasoning_gates  # noqa: E402
 from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
 
 intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
+install_reasoning_gates(intelligence_module)
 runtime = install(legacy)
 install_diagnostics(legacy, runtime)
 install_public_ops(legacy, runtime)
 install_manual_import(legacy, runtime)
+install_quality_routes(legacy, runtime, intelligence_module)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
