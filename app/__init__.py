@@ -28,10 +28,13 @@ _spa_fallback = next((route for route in app.router.routes if getattr(route, "pa
 if _spa_fallback is not None:
     app.router.routes.remove(_spa_fallback)
 
+from . import intelligence as intelligence_module  # noqa: E402
 from .diagnostics import install_diagnostics  # noqa: E402
 from .public_ops import install_public_ops  # noqa: E402
+from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
 
+intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
 runtime = install(legacy)
 install_diagnostics(legacy, runtime)
 install_public_ops(legacy, runtime)
