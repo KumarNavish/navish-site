@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+import hmac
+import importlib.util
+import os
+import secrets
+import sys
+from pathlib import Path
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from sqlalchemy import select
+
+_LEGACY_PATH = Path(__file__).resolve().parent.parent / "app.py"
+_SPEC = importlib.util.spec_from_file_location("_scios_legacy_app", _LEGACY_PATH)
+if _SPEC is None or _SPEC.loader is None:
+    raise RuntimeError("Unable to load the Swiss Career Intelligence application")
+
+legacy = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = legacy
+_SPEC.loader.exec_module(legacy)
+
+app = legacy.app
+
+
+@app.middleware("http")
+async def passwordless_private_access(request: Request, call_next):
+    """Exchange a private one-click access token for the existing secure session cookie.
+
+    The token is supplied only through a URL fragment and POST body, so it is not
+    included in normal web-server request logs. Existing authenticated sessions
+    continue without any extra request.
+    """
+
+    if request.url.path != "/api/auth/access" or request.method != "POST":
+        return await call_next(request)
+
+    expected = os.getenv("SCIOS_ACCESS_TOKEN", "")
+    if not expected:
+        return JSONResponse({"detail": "Private access is not configured"}, status_code=503)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid private access request"}, status_code=400)
+
+    supplied = str(payload.get("token", ""))
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        return JSONResponse({"detail": "Invalid private access link"}, status_code=403)
+
+    with legacy.SessionLocal() as db:
+        user = db.scalar(select(legacy.User).where(legacy.User.email == legacy.OWNER_EMAIL))
+        if user is None:
+            user = legacy.User(
+                email=legacy.OWNER_EMAIL,
+                password_hash=legacy.hash_password(secrets.token_urlsafe(32)),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            legacy.get_profile(db, user.id)
+
+        response = JSONResponse({"ok": True, "email": user.email})
+        legacy.set_session(db, user.id, response)
+        return response
