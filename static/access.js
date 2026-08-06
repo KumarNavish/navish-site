@@ -12,6 +12,11 @@
   }
 
   function loadApplication() {
+    const enhancement = document.createElement("script");
+    enhancement.src = "/assets/enhancements.js?v=live9";
+    enhancement.defer = true;
+    document.body.appendChild(enhancement);
+
     const script = document.createElement("script");
     script.type = "module";
     script.src = "/assets/live.js?v=live9";
