@@ -1,0 +1,6 @@
+{
+  "status": "render_api_or_database_secret_not_configured",
+  "service_id": "srv-d9q541egekts73cgk2a0",
+  "postgres_id": "dpg-d9q4t9u7bikc738g2ht0-a",
+  "credentials_exposed": false
+}
