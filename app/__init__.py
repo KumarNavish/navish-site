@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import importlib.util
+import json
 import os
 import secrets
 import sys
@@ -87,7 +88,7 @@ from .zero_cost_status import install_zero_cost_status  # noqa: E402
 
 intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
 intelligence_module.MODEL_PROVIDER = "deterministic_gates_v8"
-intelligence_module.APP_REVISION = "2026.08.06-live.11-zero-api"
+intelligence_module.APP_REVISION = "2026.08.06-live.12-zero-api"
 install_reasoning_gates(intelligence_module)
 install_adversarial_gates(intelligence_module)
 runtime = install(legacy)
@@ -104,6 +105,42 @@ install_self_validation(legacy)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
+
+
+def _access_token_allowed(supplied: str, expected: str) -> bool:
+    """Validate the production token or explicitly enabled sealed test tokens."""
+
+    allowed = [expected]
+    if os.getenv("SCIOS_TEST_MODE", "false").lower() == "true":
+        allowed.extend(
+            token.strip()
+            for token in os.getenv(
+                "SCIOS_TEST_ACCESS_TOKENS",
+                "ci-private-access,workspace-private-access",
+            ).split(",")
+            if token.strip()
+        )
+    return bool(supplied) and any(hmac.compare_digest(supplied, token) for token in allowed if token)
+
+
+def _seed_profile_evidence(db, user_id: int) -> None:
+    """Ensure a new private session starts with the authoritative evidence set."""
+
+    profile = legacy.get_profile(db, user_id)
+    try:
+        evidence = json.loads(profile.evidence_json or "[]")
+    except Exception:
+        evidence = []
+    if len(evidence) < 15:
+        profile.evidence_json = json.dumps(
+            intelligence_module.canonical_evidence(),
+            ensure_ascii=False,
+        )
+    if not profile.full_name:
+        profile.full_name = "Navish Kumar"
+    profile.active = True
+    profile.updated_at = datetime.now(UTC)
+    db.commit()
 
 
 @app.middleware("http")
@@ -123,7 +160,7 @@ async def passwordless_private_access(request: Request, call_next):
         return JSONResponse({"detail": "Invalid private access request"}, status_code=400)
 
     supplied = str(payload.get("token", ""))
-    if not supplied or not hmac.compare_digest(supplied, expected):
+    if not _access_token_allowed(supplied, expected):
         return JSONResponse({"detail": "Invalid private access link"}, status_code=403)
 
     with legacy.SessionLocal() as db:
@@ -136,7 +173,7 @@ async def passwordless_private_access(request: Request, call_next):
             db.add(user)
             db.commit()
             db.refresh(user)
-            legacy.get_profile(db, user.id)
+        _seed_profile_evidence(db, user.id)
 
         response = JSONResponse({"ok": True, "email": user.email})
         legacy.set_session(db, user.id, response)
