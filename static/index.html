@@ -19,15 +19,15 @@
         <div><strong>Swiss Career</strong><span>Intelligence OS</span></div>
       </div>
       <nav class="sidebar-nav">
-        <button data-route="today"><span class="nav-icon">⌂</span><span><strong>Today</strong><small>Command center</small></span></button>
-        <button data-route="opportunities"><span class="nav-icon">⌕</span><span><strong>Opportunities</strong><small>Ranked roles</small></span></button>
-        <button data-route="applications"><span class="nav-icon">▣</span><span><strong>Applications</strong><small>Pipeline and follow-ups</small></span></button>
-        <button data-route="interviews"><span class="nav-icon">◎</span><span><strong>Interviews</strong><small>Role-specific preparation</small></span></button>
-        <button data-route="network"><span class="nav-icon">◉</span><span><strong>Network</strong><small>Contacts and referrals</small></span></button>
-        <button data-route="assets"><span class="nav-icon">□</span><span><strong>Assets</strong><small>Résumé and evidence</small></span></button>
+        <button data-route="today" aria-label="Today"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5M9 21v-7h6v7"/></svg></span><span><strong>Today</strong><small>Command center</small></span></button>
+        <button data-route="opportunities" aria-label="Opportunities"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span><span><strong>Opportunities</strong><small>Ranked roles</small></span></button>
+        <button data-route="applications" aria-label="Applications"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 12h20"/></svg></span><span><strong>Applications</strong><small>Pipeline and follow-ups</small></span></button>
+        <button data-route="interviews" aria-label="Interviews"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><span><strong>Interviews</strong><small>Role-specific preparation</small></span></button>
+        <button data-route="network" aria-label="Network"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span><strong>Network</strong><small>Contacts and referrals</small></span></button>
+        <button data-route="assets" aria-label="Assets"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5h6l2 2h10v12H3z"/></svg></span><span><strong>Assets</strong><small>Résumé and evidence</small></span></button>
       </nav>
       <div class="sidebar-secondary">
-        <button data-route="profile"><span class="profile-avatar small">NK</span><span><strong>Navish Kumar</strong><small>Profile and settings</small></span></button>
+        <button data-route="profile" aria-label="Profile"><span class="profile-avatar small">NK</span><span><strong>Navish Kumar</strong><small>Profile and settings</small></span></button>
       </div>
     </aside>
     <div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
@@ -40,7 +40,7 @@
         <div class="route-heading"><strong id="route-title">Today</strong><span id="route-subtitle">Your hiring command center</span></div>
         <div class="topbar-actions">
           <span class="privacy-chip"><span></span>Private workspace</span>
-          <button class="user-chip" data-route="profile"><span class="profile-avatar">NK</span><span class="user-chip-copy"><strong>Navish Kumar</strong><small>PhD candidate</small></span></button>
+          <button class="user-chip" data-route="profile" aria-label="Profile"><span class="profile-avatar">NK</span><span class="user-chip-copy"><strong>Navish Kumar</strong><small>PhD candidate</small></span></button>
           <button id="logout" class="quiet" hidden>Sign out</button>
         </div>
       </header>
@@ -48,11 +48,11 @@
     </div>
 
     <nav class="mobile-nav" aria-label="Mobile navigation">
-      <button data-route="today"><span>Today</span></button>
-      <button data-route="opportunities"><span>Roles</span></button>
-      <button data-route="applications"><span>Applications</span></button>
-      <button data-route="interviews"><span>Interviews</span></button>
-      <button id="mobile-more"><span>More</span></button>
+      <button data-route="today" aria-label="Today"><span>Today</span></button>
+      <button data-route="opportunities" aria-label="Roles"><span>Roles</span></button>
+      <button data-route="applications" aria-label="Applications"><span>Applications</span></button>
+      <button data-route="interviews" aria-label="Interviews"><span>Interviews</span></button>
+      <button id="mobile-more" aria-label="More"><span>More</span></button>
     </nav>
     <div id="mobile-panel" class="mobile-panel" data-open="false">
       <button data-route="network">Network</button>
@@ -66,7 +66,7 @@
     <button id="detail-close" class="detail-close" aria-label="Close role workspace">×</button>
     <div id="detail-content"></div>
   </aside>
-  <dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-body"></div></dialog>
+  <dialog id="dialog"><div id="dialog-body"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/assets/access.js?v=live9" defer></script>
   <script src="/assets/backup.js?v=live9" defer></script>
