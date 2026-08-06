@@ -3,16 +3,69 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from playwright.sync_api import ConsoleMessage, Page, Request, sync_playwright
+from playwright.sync_api import Browser, ConsoleMessage, Page, Request, sync_playwright
 
 ORIGIN = "http://127.0.0.1:8000"
-OUT = Path("docs/e2e")
+OUT = Path("docs/e2e-redesign")
 OUT.mkdir(parents=True, exist_ok=True)
 
 
 def assert_no_horizontal_overflow(page: Page) -> None:
-    overflow = page.evaluate("Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth")
+    overflow = page.evaluate(
+        "Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth"
+    )
     assert overflow <= 1, f"horizontal overflow: {overflow}px"
+
+
+def assert_accessible_controls(page: Page) -> None:
+    unnamed_buttons = page.evaluate(
+        """
+        [...document.querySelectorAll('button')]
+          .filter((node) => !node.textContent.trim() && !node.getAttribute('aria-label') && !node.title)
+          .map((node) => node.outerHTML.slice(0, 180))
+        """
+    )
+    unlabeled_fields = page.evaluate(
+        """
+        [...document.querySelectorAll('input, select, textarea')]
+          .filter((node) => !node.getAttribute('aria-label') && !node.closest('label') && !(node.id && document.querySelector(`label[for="${node.id}"]`)))
+          .map((node) => node.outerHTML.slice(0, 180))
+        """
+    )
+    assert not unnamed_buttons, unnamed_buttons
+    assert not unlabeled_fields, unlabeled_fields
+
+
+def open_private(page: Page, route: str = "today") -> None:
+    page.goto(f"{ORIGIN}/#access=ci-private-access", wait_until="networkidle")
+    page.get_by_role("heading", name="Today", exact=True).wait_for()
+    if route != "today":
+        page.evaluate(f"location.hash = '{route}'")
+        page.wait_for_load_state("networkidle")
+
+
+def screenshot(page: Page, name: str) -> None:
+    assert_no_horizontal_overflow(page)
+    assert_accessible_controls(page)
+    page.screenshot(path=str(OUT / name), full_page=True)
+
+
+def new_page(browser: Browser, viewport: dict[str, int], console_errors: list[str], failed_requests: list[str]) -> tuple:
+    context = browser.new_context(viewport=viewport, device_scale_factor=1)
+    page = context.new_page()
+    page.on(
+        "console",
+        lambda message: console_errors.append(message.text)
+        if message.type == "error"
+        else None,
+    )
+    page.on(
+        "requestfailed",
+        lambda request: failed_requests.append(
+            f"{request.method} {request.url}: {request.failure}"
+        ),
+    )
+    return context, page
 
 
 def run() -> None:
@@ -22,76 +75,124 @@ def run() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
-        context = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=1)
-        page = context.new_page()
-        page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
-        page.on("requestfailed", lambda request: failed_requests.append(f"{request.method} {request.url}: {request.failure}"))
+        context, page = new_page(
+            browser,
+            {"width": 390, "height": 844},
+            console_errors,
+            failed_requests,
+        )
 
-        page.goto(f"{ORIGIN}/#access=ci-private-access", wait_until="networkidle")
-        page.get_by_role("heading", name="Today").wait_for()
-        assert_no_horizontal_overflow(page)
-        steps.append("passwordless private session opened")
-        page.screenshot(path=str(OUT / "01-today-mobile.png"), full_page=True)
+        open_private(page)
+        page.get_by_text("Daily priority").wait_for()
+        page.get_by_role("heading", name="Action queue").wait_for()
+        screenshot(page, "01-today-mobile-390.png")
+        steps.append("Today exposed one dominant priority and a bounded action queue")
 
         page.get_by_role("button", name="Roles", exact=True).click()
-        page.get_by_role("heading", name="Recommended Roles").wait_for()
-        page.get_by_role("button", name="Import another role").click()
-        page.locator("#import-title").fill("Applied Machine Learning Research Engineer")
-        page.locator("#import-company").fill("Synthetic Acceptance Employer")
-        page.locator("#import-location").fill("Basel, Switzerland")
-        page.locator("#import-description").fill(
-            "We require Python, PyTorch, optimization, experimental design, Docker, CI/CD, automated testing and model evaluation. "
-            "A PhD is valued. The engineer builds reliable model adaptation and evaluation systems and explains failure modes. "
-            "Two years of research or engineering experience. CHF 125,000–CHF 145,000 base salary."
+        page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
+        page.get_by_role("button", name="Import role", exact=True).click()
+        page.get_by_label("Title").fill("Applied Machine Learning Research Engineer")
+        page.get_by_label("Employer").fill("Synthetic Acceptance Employer")
+        page.get_by_label("Location").fill("Basel, Switzerland")
+        page.get_by_label("Complete job description").fill(
+            "We require Python, PyTorch, optimization, continual learning, experimental design, Docker, CI/CD, automated testing and model evaluation. "
+            "A PhD is valued. The engineer owns reliable adaptation and evaluation systems, explains failure modes, and collaborates with researchers and product engineers. "
+            "Two years of research or engineering experience. CHF 130,000–CHF 155,000 base salary."
         )
         page.get_by_role("button", name="Analyze role").click()
-        page.get_by_role("heading", name="Applied Machine Learning Research Engineer").wait_for()
-        assert_no_horizontal_overflow(page)
-        steps.append("job imported and evidence-bounded analysis rendered")
-        page.screenshot(path=str(OUT / "02-role-analysis-mobile.png"), full_page=True)
+        page.get_by_role(
+            "heading", name="Applied Machine Learning Research Engineer", exact=True
+        ).wait_for()
+        page.get_by_text("Why this employer may interview Navish").wait_for()
+        screenshot(page, "02-opportunity-workspace-mobile-390.png")
+        steps.append("Opportunity import opened the canonical role workspace")
 
         page.get_by_role("button", name="Pursue", exact=True).click()
-        page.get_by_role("heading", name="Prepare this application").wait_for()
-        page.get_by_role("button", name="Confirm", exact=True).click()
-        page.get_by_role("heading", name="Applications").wait_for()
-        page.get_by_text("Package ready").wait_for()
-        page.get_by_text("Not submitted").wait_for()
-        page.get_by_text("Evidence-grounded application package").wait_for()
-        assert_no_horizontal_overflow(page)
-        steps.append("Pursue created package without external submission")
-        page.screenshot(path=str(OUT / "03-application-package-mobile.png"), full_page=True)
+        page.get_by_role("heading", name="Prepare this application?").wait_for()
+        page.get_by_role("button", name="Prepare package").click()
+        page.get_by_role("heading", name="Application state").wait_for()
+        page.get_by_text("Ready for review").wait_for()
+        screenshot(page, "03-application-workspace-mobile-390.png")
+        steps.append("Pursue created an evidence-linked package without submission")
 
-        page.get_by_role("button", name="Prepare", exact=True).click()
-        page.get_by_role("heading", name="Interview Preparation").wait_for()
-        page.get_by_text("Recruiter screen").wait_for()
-        assert_no_horizontal_overflow(page)
-        steps.append("role-specific interview preparation scheduled")
-        page.screenshot(path=str(OUT / "04-preparation-mobile.png"), full_page=True)
+        page.get_by_role("button", name="Close role workspace").click()
+        page.get_by_role("button", name="Applications", exact=True).click()
+        page.get_by_role("heading", name="Applications", exact=True).wait_for()
+        page.get_by_text("Synthetic Acceptance Employer").wait_for()
+        stage = page.locator("select[data-application-stage]").first
+        stage.select_option("Ready to apply")
+        page.get_by_text("Ready to apply", exact=True).wait_for()
+        screenshot(page, "04-applications-list-mobile-390.png")
+        steps.append("Application stage changed inline in one interaction")
+
+        page.get_by_role("button", name="Pipeline", exact=True).click()
+        page.get_by_role("heading", name="Preparing", exact=True).wait_for()
+        screenshot(page, "05-applications-pipeline-mobile-390.png")
+        steps.append("Functional pipeline rendered from canonical application records")
+
+        page.get_by_role("button", name="Interviews", exact=True).click()
+        page.get_by_role("heading", name="Interviews", exact=True).wait_for()
+        page.get_by_text("Pre-interview mode").wait_for()
+        page.locator("[data-complete-session]").first.click()
+        page.get_by_text("Preparation recorded").wait_for()
+        screenshot(page, "06-interviews-mobile-390.png")
+        steps.append("Role-specific preparation recorded completion")
+
+        page.get_by_role("button", name="More", exact=True).click()
+        page.get_by_role("button", name="Network", exact=True).click()
+        page.get_by_role("heading", name="Network", exact=True).wait_for()
+        page.get_by_text("Access gaps").wait_for()
+        screenshot(page, "07-network-mobile-390.png")
+
+        page.get_by_role("button", name="More", exact=True).click()
+        page.get_by_role("button", name="Assets", exact=True).click()
+        page.get_by_role("heading", name="Assets", exact=True).wait_for()
+        page.get_by_text("Role-specific packages").wait_for()
+        page.get_by_text("Synthetic Acceptance Employer").wait_for()
+        screenshot(page, "08-assets-mobile-390.png")
+        steps.append("Network and Assets reused the same role and evidence state")
 
         page.get_by_role("button", name="Today", exact=True).click()
-        page.get_by_role("heading", name="Today").wait_for()
-        cards = page.locator("article.card").count()
-        assert cards <= 3, f"Today displayed {cards} primary actions"
-        assert_no_horizontal_overflow(page)
-        steps.append("Today limited to at most three consequential actions")
+        page.get_by_role("heading", name="Today", exact=True).wait_for()
+        assert page.locator(".priority-card").count() == 1
+        assert page.locator(".action-row").count() <= 3
+        screenshot(page, "09-today-after-workflow-mobile-390.png")
+        context.close()
 
-        page.set_viewport_size({"width": 1440, "height": 1000})
-        page.reload(wait_until="networkidle")
-        page.get_by_role("heading", name="Today").wait_for()
-        assert_no_horizontal_overflow(page)
-        page.screenshot(path=str(OUT / "05-today-desktop.png"), full_page=True)
-        steps.append("desktop responsive extension rendered")
+        for label, viewport, route in [
+            ("mobile-430", {"width": 430, "height": 932}, "today"),
+            ("tablet-820", {"width": 820, "height": 1180}, "opportunities"),
+            ("desktop-1440", {"width": 1440, "height": 1000}, "applications"),
+        ]:
+            context, page = new_page(
+                browser, viewport, console_errors, failed_requests
+            )
+            open_private(page)
+            if route == "opportunities":
+                page.get_by_role("button", name="Roles", exact=True).click()
+                page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
+            elif route == "applications":
+                page.get_by_role("button", name="Applications", exact=True).click()
+                page.get_by_role("heading", name="Applications", exact=True).wait_for()
+            screenshot(page, f"10-{label}-{route}.png")
+            steps.append(f"{label} responsive layout passed for {route}")
+            context.close()
 
         browser.close()
 
     report = {
         "result": "success" if not console_errors and not failed_requests else "failure",
-        "viewports": ["390x844", "1440x1000"],
+        "browser_plugin": "not available; repository Playwright workflow used",
+        "viewports": ["390x844", "430x932", "820x1180", "1440x1000"],
         "steps": steps,
         "console_errors": console_errors,
         "failed_requests": failed_requests,
         "external_actions_executed": False,
-        "screenshots": sorted(path.name for path in OUT.glob("*.png")),
+        "before_screenshots": [
+            "docs/e2e/01-today-mobile.png",
+            "docs/e2e/05-today-desktop.png",
+        ],
+        "after_screenshots": sorted(path.name for path in OUT.glob("*.png")),
     }
     (OUT / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     assert not console_errors, console_errors
