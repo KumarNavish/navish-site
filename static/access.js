@@ -17,11 +17,21 @@
     enhancement.defer = true;
     document.body.appendChild(enhancement);
 
+    const chatgptStyle = document.createElement("link");
+    chatgptStyle.rel = "stylesheet";
+    chatgptStyle.href = "/assets/chatgpt-native.css?v=zero-api1";
+    document.head.appendChild(chatgptStyle);
+
     const script = document.createElement("script");
     script.type = "module";
     script.src = "/assets/live.js?v=live9";
     script.onerror = () => showPrivateLinkMessage("The live dashboard could not be loaded. Refresh once.");
     document.body.appendChild(script);
+
+    const chatgpt = document.createElement("script");
+    chatgpt.src = "/assets/chatgpt-native.js?v=zero-api1";
+    chatgpt.defer = true;
+    document.body.appendChild(chatgpt);
   }
 
   async function authenticationStatus() {

@@ -1,0 +1,41 @@
+name: Free scheduler wake
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Duplicate CET/CEST wake windows are intentional. The application itself
+    # evaluates due schedules in Europe/Zurich and ignores non-due invocations.
+    - cron: '30 4,5 * * 1-5'
+    - cron: '30 14,15 * * 1-5'
+    - cron: '0 5,6 * * *'
+    - cron: '0 16,17 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scios-free-scheduler-wake
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wake the free service and run only due schedules
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 12 \
+            --connect-timeout 30 --max-time 180 \
+            https://swiss-career-intelligence-os.onrender.com/ops/wake \
+            | tee /tmp/scios-wake.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/scios-wake.json').read_text())
+          assert payload.get('external_actions_executed') is False
+          assert payload.get('openai_api_used') is False
+          assert payload.get('api_cost_chf') == 0
+          print(json.dumps(payload, indent=2))
+          PY
