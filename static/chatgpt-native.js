@@ -46,12 +46,11 @@
   }
 
   async function openAnalysis(jobId) {
-    const target = window.open("about:blank", "_blank", "noopener,noreferrer");
+    window.open("https://chatgpt.com/", "_blank", "noopener,noreferrer");
     try {
       const packet = await api(`/api/chatgpt/jobs/${jobId}/packet`);
       sessionStorage.setItem(`scios-chatgpt-packet-${jobId}`, packet.prompt);
       const copied = await copyText(packet.prompt);
-      if (target) target.location.replace("https://chatgpt.com/");
       dialog("Analyze this role with your Pro model", `<div class="chatgpt-flow">
         <div class="chatgpt-step complete"><strong>1</strong><div><b>Role context prepared</b><span>Verified evidence, source facts, deterministic gates, package and preparation are included.</span></div></div>
         <div class="chatgpt-step ${copied ? "complete" : "warning"}"><strong>2</strong><div><b>${copied ? "Prompt copied" : "Clipboard permission was blocked"}</b><span>${copied ? "ChatGPT opened in a new tab." : "Use Copy packet below, then open ChatGPT."}</span></div></div>
@@ -63,7 +62,6 @@
       document.querySelector("[data-copy-packet]")?.addEventListener("click", async () => { await copyText(packet.prompt); toast("ChatGPT role packet copied", "success"); });
       document.querySelector("[data-import-clipboard]")?.addEventListener("click", () => importClipboard(jobId));
     } catch (error) {
-      if (target) target.close();
       toast(error.message || "Unable to prepare the ChatGPT role packet", "error");
     }
   }
