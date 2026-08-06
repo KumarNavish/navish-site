@@ -1,40 +1,17 @@
 {
-  "tested_commit": "14258ce6bc3ff14fe07703dced3de61878292508",
+  "tested_commit": "bca4e505e47493f37bbce7a661a1cb68a640abcc",
   "workflow": "Production validation",
-  "recorded_at_utc": "2026-08-06T11:27:45.717045+00:00",
+  "recorded_at_utc": "2026-08-06T11:31:35.507967+00:00",
   "result": "success",
   "python": "3.12.8",
   "checks": {
-    "python_compile": [
-      "app/intelligence.py:81: SyntaxWarning: invalid escape sequence '\\+'",
-      "  \"c\\+\\+\": r\"c\\+\\+\","
-    ],
+    "python_compile": [],
     "node_live": [],
     "node_access": [],
     "node_service_worker": [],
     "pytest": [
       ".......                                                                  [100%]",
-      "=============================== warnings summary ===============================",
-      "app/upgrade.py:678",
-      "  /home/runner/work/navish-site/navish-site/app/upgrade.py:678: DeprecationWarning: ",
-      "          on_event is deprecated, use lifespan event handlers instead.",
-      "  ",
-      "          Read more about it in the",
-      "          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).",
-      "          ",
-      "    @legacy.app.on_event(\"startup\")",
-      "",
-      "../../../../../opt/hostedtoolcache/Python/3.12.8/x64/lib/python3.12/site-packages/fastapi/applications.py:4495",
-      "  /opt/hostedtoolcache/Python/3.12.8/x64/lib/python3.12/site-packages/fastapi/applications.py:4495: DeprecationWarning: ",
-      "          on_event is deprecated, use lifespan event handlers instead.",
-      "  ",
-      "          Read more about it in the",
-      "          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).",
-      "          ",
-      "    return self.router.on_event(event_type)",
-      "",
-      "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
-      "7 passed, 2 warnings in 1.74s"
+      "7 passed in 1.81s"
     ]
   }
 }
