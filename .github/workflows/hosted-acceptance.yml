@@ -1,0 +1,156 @@
+name: Hosted acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'hosted-acceptance-trigger.txt'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scios-hosted-acceptance
+  cancel-in-progress: false
+
+jobs:
+  verify-public-origin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORIGIN: https://swiss-career-intelligence-os.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Exercise HTTPS, diagnostics, security, and public boundaries
+        id: probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/scios-hosted
+          curl --fail --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
+            --dump-header /tmp/scios-hosted/root.headers \
+            --output /tmp/scios-hosted/root.html "$ORIGIN/"
+          curl --fail --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
+            --dump-header /tmp/scios-hosted/health.headers \
+            --output /tmp/scios-hosted/health.json "$ORIGIN/healthz"
+          ready_status=$(curl --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
+            --dump-header /tmp/scios-hosted/ready.headers \
+            --output /tmp/scios-hosted/ready.json --write-out '%{http_code}' "$ORIGIN/readyz")
+          ops_status=$(curl --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
+            --dump-header /tmp/scios-hosted/ops.headers \
+            --output /tmp/scios-hosted/ops.json --write-out '%{http_code}' "$ORIGIN/ops/summary")
+          unauth_status=$(curl --show-error --silent --max-time 60 \
+            --output /tmp/scios-hosted/unauth.json --write-out '%{http_code}' "$ORIGIN/api/live/profile")
+          csrf_status=$(curl --show-error --silent --max-time 60 \
+            -X PUT -H 'Origin: https://adversarial.invalid' -H 'Content-Type: application/json' \
+            -d '{"work_authorization":"tamper"}' \
+            --output /tmp/scios-hosted/csrf.json --write-out '%{http_code}' "$ORIGIN/api/profile/facts")
+          printf '%s' "$ready_status" > /tmp/scios-hosted/ready.status
+          printf '%s' "$ops_status" > /tmp/scios-hosted/ops.status
+          printf '%s' "$unauth_status" > /tmp/scios-hosted/unauth.status
+          printf '%s' "$csrf_status" > /tmp/scios-hosted/csrf.status
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root_headers = Path('/tmp/scios-hosted/root.headers').read_text(errors='replace').lower()
+          root_html = Path('/tmp/scios-hosted/root.html').read_text(errors='replace')
+          health = json.loads(Path('/tmp/scios-hosted/health.json').read_text())
+          ready = json.loads(Path('/tmp/scios-hosted/ready.json').read_text())
+          ops = json.loads(Path('/tmp/scios-hosted/ops.json').read_text())
+          ready_status = int(Path('/tmp/scios-hosted/ready.status').read_text())
+          ops_status = int(Path('/tmp/scios-hosted/ops.status').read_text())
+          unauth_status = int(Path('/tmp/scios-hosted/unauth.status').read_text())
+          csrf_status = int(Path('/tmp/scios-hosted/csrf.status').read_text())
+
+          assert 'Swiss Career Intelligence OS' in root_html
+          assert health.get('status') == 'ok'
+          assert ops_status == 200
+          assert unauth_status == 401
+          assert csrf_status == 403
+          assert ops.get('external_actions_executed') is False
+          assert ops.get('serious_roles_retained', 999) <= 5
+          for required in (
+              'strict-transport-security:',
+              'content-security-policy:',
+              'x-frame-options:',
+              'x-content-type-options:',
+              'referrer-policy:',
+          ):
+              assert required in root_headers, required
+
+          if ready_status == 200:
+              assert ready.get('status') == 'ready'
+              assert ready.get('checks', {}).get('postgresql_durability') is True
+          else:
+              assert ready_status == 503
+              assert ready.get('status') == 'not_ready'
+              assert ready.get('checks', {}).get('postgresql_durability') is False
+          PY
+      - name: Record externally observed evidence
+        if: always()
+        env:
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root_headers = Path('/tmp/scios-hosted/root.headers').read_text(errors='replace') if Path('/tmp/scios-hosted/root.headers').exists() else ''
+          def load_json(name):
+              path = Path(f'/tmp/scios-hosted/{name}.json')
+              if not path.exists(): return None
+              try: return json.loads(path.read_text())
+              except Exception: return {'raw': path.read_text(errors='replace')[:1000]}
+          def load_status(name):
+              path = Path(f'/tmp/scios-hosted/{name}.status')
+              return int(path.read_text()) if path.exists() and path.read_text().isdigit() else None
+
+          headers = {}
+          for line in root_headers.splitlines():
+              if ':' in line:
+                  key, value = line.split(':', 1)
+                  key = key.strip().lower()
+                  if key in {'strict-transport-security','content-security-policy','x-frame-options','x-content-type-options','referrer-policy','permissions-policy','cache-control'}:
+                      headers[key] = value.strip()
+          ready_status = load_status('ready')
+          payload = {
+              'tested_commit': os.environ['GITHUB_SHA'],
+              'origin': os.environ['ORIGIN'],
+              'observed_at_utc': datetime.now(timezone.utc).isoformat(),
+              'tls': 'validated by curl certificate verification' if Path('/tmp/scios-hosted/root.html').exists() else 'not validated',
+              'probe_result': os.environ.get('PROBE_OUTCOME', 'unknown'),
+              'production_state': 'complete' if ready_status == 200 else 'blocked_by_postgresql_attachment',
+              'root_status': 200 if Path('/tmp/scios-hosted/root.html').exists() else None,
+              'healthz': load_json('health'),
+              'readyz_status': ready_status,
+              'readyz': load_json('ready'),
+              'ops_status': load_status('ops'),
+              'ops': load_json('ops'),
+              'unauthenticated_private_api_status': load_status('unauth'),
+              'cross_origin_mutation_status': load_status('csrf'),
+              'security_headers': headers,
+          }
+          Path('docs/hosted-acceptance.json').write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'Swiss Career Intelligence Hosted QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo 'Main advanced during hosted acceptance; preserving evidence in workflow logs only.'
+            exit 0
+          fi
+          git add docs/hosted-acceptance.json
+          git commit -m 'Record externally observed hosted acceptance evidence' || exit 0
+          git push origin HEAD:main
+      - name: Enforce probe result
+        if: always() && steps.probe.outcome != 'success'
+        run: exit 1
