@@ -1,1 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#111827"/><path d="M142 151h228v54H142zm0 78h156v54H142zm0 78h228v54H142z" fill="#fff"/><circle cx="344" cy="256" r="34" fill="#ef4444"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Swiss Career Intelligence OS">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="40" x2="448" y2="472" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#75A7FF"/>
+      <stop offset="1" stop-color="#3679ED"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="#071521"/>
+  <rect x="54" y="54" width="404" height="404" rx="92" fill="url(#bg)"/>
+  <path d="M154 170c0-34 26-56 68-56 27 0 52 8 73 24l-24 35c-15-11-32-17-49-17-16 0-25 6-25 15 0 12 10 16 39 24 44 12 65 31 65 67 0 38-30 63-76 63-33 0-64-11-88-32l27-35c19 16 40 24 62 24 19 0 30-7 30-18 0-11-9-16-37-24-44-12-65-30-65-70Z" fill="#fff"/>
+  <path d="M329 113h40v212h-40z" fill="#DCE8FF" opacity=".92"/>
+  <circle cx="349" cy="370" r="24" fill="#DCE8FF"/>
+</svg>
