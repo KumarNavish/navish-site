@@ -13,6 +13,16 @@ on:
       - 'pytest.ini'
       - 'ci-trigger.txt'
       - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'app/**'
+      - 'static/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - 'pytest.ini'
+      - '.github/workflows/ci.yml'
 
 permissions:
   contents: write
@@ -102,8 +112,8 @@ jobs:
           }
           Path('docs/ci-live.json').write_text(json.dumps(payload, indent=2) + '\n')
           PY
-          if [ "$GITHUB_REF_NAME" != 'main' ]; then
-            echo 'Branch validation complete; evidence remains in workflow logs until merge.'
+          if [ "$GITHUB_EVENT_NAME" != 'push' ] || [ "$GITHUB_REF_NAME" != 'main' ]; then
+            echo 'Branch or PR validation complete; evidence remains in workflow logs until merge.'
             exit 0
           fi
           git config user.name 'Swiss Career Intelligence CI'
