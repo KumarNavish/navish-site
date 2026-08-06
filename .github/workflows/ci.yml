@@ -110,22 +110,25 @@ jobs:
                   'pytest': tail('/tmp/pytest.txt'),
               },
           }
-          Path('docs/ci-live.json').write_text(json.dumps(payload, indent=2) + '\n')
+          output = 'docs/ci-redesign-branch.json' if os.environ.get('GITHUB_REF_NAME') == 'ux-workflow-redesign' else 'docs/ci-live.json'
+          Path(output).write_text(json.dumps(payload, indent=2) + '\n')
           PY
-          if [ "$GITHUB_EVENT_NAME" != 'push' ] || [ "$GITHUB_REF_NAME" != 'main' ]; then
-            echo 'Branch or PR validation complete; evidence remains in workflow logs until merge.'
+          if [ "$GITHUB_EVENT_NAME" != 'push' ]; then
+            echo 'Pull-request validation complete; evidence remains in workflow logs.'
             exit 0
           fi
+          target_file=docs/ci-live.json
+          if [ "$GITHUB_REF_NAME" = 'ux-workflow-redesign' ]; then target_file=docs/ci-redesign-branch.json; fi
           git config user.name 'Swiss Career Intelligence CI'
           git config user.email 'actions@users.noreply.github.com'
-          git fetch origin main
-          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo 'Main advanced during validation; preserving results in workflow logs only.'
+          git fetch origin "$GITHUB_REF_NAME"
+          if [ "$(git rev-parse origin/$GITHUB_REF_NAME)" != "$GITHUB_SHA" ]; then
+            echo 'Branch advanced during validation; preserving results in workflow logs only.'
             exit 0
           fi
-          git add docs/ci-live.json
+          git add "$target_file"
           git commit -m 'Record production validation evidence' || exit 0
-          git push origin HEAD:main
+          git push origin "HEAD:$GITHUB_REF_NAME"
       - name: Enforce validation result
         if: always() && steps.validation.outcome != 'success'
         run: exit 1
