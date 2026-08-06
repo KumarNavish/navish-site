@@ -1,0 +1,39 @@
+name: Swiss Career Intelligence scheduler
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scheduler-trigger.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scios-scheduler
+  cancel-in-progress: false
+
+jobs:
+  wake-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify live readiness and execute only due work
+        shell: bash
+        env:
+          SCIOS_ORIGIN: https://swiss-career-intelligence-os.onrender.com
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --retry 4 --retry-delay 5 --max-time 90 "$SCIOS_ORIGIN/healthz"
+          echo
+          curl --fail --show-error --silent --retry 4 --retry-delay 5 --max-time 90 "$SCIOS_ORIGIN/readyz"
+          echo
+          curl --fail --show-error --silent --retry 4 --retry-delay 5 --max-time 240 \
+            -X POST -H 'Content-Type: application/json' -d '{}' \
+            "$SCIOS_ORIGIN/api/scheduler/tick"
+          echo
+          curl --fail --show-error --silent --retry 4 --retry-delay 5 --max-time 90 "$SCIOS_ORIGIN/ops/summary"
+          echo
