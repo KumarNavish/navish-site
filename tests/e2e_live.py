@@ -41,6 +41,12 @@ def open_private(page: Page) -> None:
     page.get_by_role("heading", name="Today", exact=True).wait_for()
 
 
+def click_route(page: Page, route: str) -> None:
+    width = page.viewport_size["width"] if page.viewport_size else 1440
+    scope = ".mobile-nav" if width <= 820 else ".sidebar"
+    page.locator(f'{scope} [data-route="{route}"]').click()
+
+
 def screenshot(page: Page, name: str) -> None:
     assert_no_horizontal_overflow(page)
     assert_accessible_controls(page)
@@ -90,7 +96,7 @@ def run() -> None:
         screenshot(page, "after-01-today-mobile-390.png")
         steps.append("Today exposed one dominant priority and a bounded action queue")
 
-        page.get_by_role("button", name="Roles", exact=True).click()
+        click_route(page, "opportunities")
         page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
         page.get_by_role("button", name="Import role", exact=True).click()
         page.get_by_label("Title").fill("Applied Machine Learning Research Engineer")
@@ -105,7 +111,7 @@ def run() -> None:
         page.get_by_role(
             "heading", name="Applied Machine Learning Research Engineer", exact=True
         ).wait_for()
-        page.get_by_text("Why this employer may interview Navish").wait_for()
+        page.get_by_text("Why this employer may interview Navish", exact=True).wait_for()
         screenshot(page, "after-02-opportunity-workspace-mobile-390.png")
         steps.append("Opportunity import opened the canonical role workspace")
 
@@ -113,17 +119,19 @@ def run() -> None:
         page.get_by_role("heading", name="Prepare this application?").wait_for()
         page.get_by_role("button", name="Prepare package").click()
         page.get_by_role("heading", name="Application state").wait_for()
-        page.get_by_text("Ready for review").wait_for()
+        page.get_by_text("Ready for review", exact=True).wait_for()
         screenshot(page, "after-03-application-workspace-mobile-390.png")
         steps.append("Pursue created an evidence-linked package without submission")
 
         page.get_by_role("button", name="Close role workspace").click()
-        page.get_by_role("button", name="Applications", exact=True).click()
+        click_route(page, "applications")
         page.get_by_role("heading", name="Applications", exact=True).wait_for()
-        page.get_by_text("Synthetic Acceptance Employer").wait_for()
+        page.locator(".mobile-data-list").get_by_text(
+            "Synthetic Acceptance Employer", exact=True
+        ).first.wait_for()
         stage = page.locator("select[data-application-stage]").first
         stage.select_option("Ready to apply")
-        page.get_by_text("Ready to apply", exact=True).wait_for()
+        page.get_by_text("Stage updated to Ready to apply", exact=True).wait_for()
         screenshot(page, "after-04-applications-list-mobile-390.png")
         steps.append("Application stage changed inline in one interaction")
 
@@ -132,32 +140,34 @@ def run() -> None:
         screenshot(page, "after-05-applications-pipeline-mobile-390.png")
         steps.append("Functional pipeline rendered from canonical application records")
 
-        page.get_by_role("button", name="Interviews", exact=True).click()
+        click_route(page, "interviews")
         page.get_by_role("heading", name="Interviews", exact=True).wait_for()
-        page.get_by_text("Pre-interview mode").wait_for()
+        page.get_by_text("Pre-interview mode", exact=True).first.wait_for()
         page.locator("[data-complete-session]").first.click()
-        page.get_by_text("Preparation recorded").wait_for()
+        page.get_by_text("Preparation recorded", exact=True).wait_for()
         screenshot(page, "after-06-interviews-mobile-390.png")
         steps.append("Role-specific preparation recorded completion")
 
-        page.get_by_role("button", name="More", exact=True).click()
-        page.get_by_role("button", name="Network", exact=True).click()
+        page.locator("#mobile-more").click()
+        page.locator('#mobile-panel [data-route="network"]').click()
         page.get_by_role("heading", name="Network", exact=True).wait_for()
-        page.get_by_text("Access gaps").wait_for()
+        page.get_by_role("heading", name="Access gaps", exact=True).wait_for()
         screenshot(page, "after-07-network-mobile-390.png")
 
-        page.get_by_role("button", name="More", exact=True).click()
-        page.get_by_role("button", name="Assets", exact=True).click()
+        page.locator("#mobile-more").click()
+        page.locator('#mobile-panel [data-route="assets"]').click()
         page.get_by_role("heading", name="Assets", exact=True).wait_for()
-        page.get_by_text("Role-specific packages").wait_for()
-        page.get_by_text("Synthetic Acceptance Employer").wait_for()
+        page.get_by_role("heading", name="Role-specific packages", exact=True).wait_for()
+        page.locator(".asset-list").get_by_text(
+            "Synthetic Acceptance Employer", exact=True
+        ).first.wait_for()
         screenshot(page, "after-08-assets-mobile-390.png")
         steps.append("Network and Assets reused the same role and evidence state")
 
-        page.get_by_role("button", name="Today", exact=True).click()
+        click_route(page, "today")
         page.get_by_role("heading", name="Today", exact=True).wait_for()
         assert page.locator(".priority-card").count() == 1
-        assert page.locator(".action-row").count() <= 3
+        assert page.locator(".action-row:visible").count() <= 2
         screenshot(page, "after-09-today-workflow-mobile-390.png")
         context.close()
 
@@ -170,12 +180,13 @@ def run() -> None:
                 browser, viewport, console_errors, failed_requests
             )
             open_private(page)
-            if route == "opportunities":
-                page.get_by_role("button", name="Roles", exact=True).click()
-                page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
-            elif route == "applications":
-                page.get_by_role("button", name="Applications", exact=True).click()
-                page.get_by_role("heading", name="Applications", exact=True).wait_for()
+            if route != "today":
+                click_route(page, route)
+                page.get_by_role(
+                    "heading",
+                    name="Opportunities" if route == "opportunities" else "Applications",
+                    exact=True,
+                ).wait_for()
             screenshot(page, f"after-10-{label}-{route}.png")
             steps.append(f"{label} responsive layout passed for {route}")
             context.close()
