@@ -1,0 +1,153 @@
+name: Hosted zero-API validation
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scios-hosted-zero-api-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.issue.title, '[SCIOS HOSTED VALIDATE]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      BASE_URL: https://swiss-career-intelligence-os.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Exercise the deployed HTTPS service
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import ssl
+          import time
+          import urllib.error
+          import urllib.request
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          base = os.environ['BASE_URL'].rstrip('/')
+          context = ssl.create_default_context()
+
+          def request(path: str, attempts: int = 8):
+              error = None
+              for attempt in range(attempts):
+                  try:
+                      req = urllib.request.Request(base + path, headers={'User-Agent': 'SCIOS-Hosted-Validation/1.0'})
+                      with urllib.request.urlopen(req, timeout=120, context=context) as response:
+                          body = response.read()
+                          return {
+                              'status': response.status,
+                              'url': response.geturl(),
+                              'headers': {key.lower(): value for key, value in response.headers.items()},
+                              'body': body.decode('utf-8', errors='replace'),
+                          }
+                  except Exception as exc:
+                      error = repr(exc)
+                      time.sleep(min(10 + attempt * 5, 35))
+              raise RuntimeError(f'{path} failed after {attempts} attempts: {error}')
+
+          checks = {}
+          for path in ('/', '/healthz', '/readyz', '/ops/chatgpt', '/ops/cost', '/ops/wake',
+                       '/assets/chatgpt-native.js', '/assets/chatgpt-native.css', '/api/auth/status'):
+              checks[path] = request(path)
+
+          protected = {}
+          for path in ('/api/chatgpt/status', '/api/chatgpt/connection', '/mcp'):
+              try:
+                  protected[path] = request(path, attempts=1)
+              except RuntimeError as wrapped:
+                  # urllib raises for 401; repeat once and retain the response body.
+                  try:
+                      req = urllib.request.Request(base + path, headers={'User-Agent': 'SCIOS-Hosted-Validation/1.0'})
+                      urllib.request.urlopen(req, timeout=60, context=context)
+                  except urllib.error.HTTPError as exc:
+                      protected[path] = {
+                          'status': exc.code,
+                          'url': exc.geturl(),
+                          'headers': {key.lower(): value for key, value in exc.headers.items()},
+                          'body': exc.read().decode('utf-8', errors='replace'),
+                      }
+
+          def payload(path: str):
+              return json.loads(checks[path]['body'])
+
+          health = payload('/healthz')
+          ready = payload('/readyz')
+          chatgpt = payload('/ops/chatgpt')
+          cost = payload('/ops/cost')
+          wake = payload('/ops/wake')
+          auth = payload('/api/auth/status')
+
+          assert checks['/']['status'] == 200
+          assert checks['/']['url'].startswith('https://')
+          assert checks['/healthz']['status'] == 200 and health.get('status') in {'ok', 'healthy'}
+          assert checks['/readyz']['status'] == 200 and ready.get('status') in {'ok', 'ready'}
+          assert chatgpt['mode'] == 'interactive_chatgpt_zero_api'
+          assert chatgpt['openai_api_enabled'] is False and chatgpt['api_cost_chf'] == 0
+          assert chatgpt['external_actions_executed'] is False and chatgpt['read_only_mcp'] is True
+          assert cost['mode'] == 'zero_cost' and cost['cost_chf'] == 0
+          assert cost['paid_services_allowed'] is False and cost['openai_api_enabled'] is False
+          assert wake['openai_api_used'] is False and wake['api_cost_chf'] == 0
+          assert wake['external_actions_executed'] is False
+          assert auth.get('authenticated') is False
+          assert all(item.get('status') == 401 for item in protected.values()), protected
+          assert 'Analyze in ChatGPT Pro' in checks['/assets/chatgpt-native.js']['body']
+          assert 'chatgpt-role-panel' in checks['/assets/chatgpt-native.css']['body']
+          assert checks['/']['headers'].get('x-content-type-options') == 'nosniff'
+          assert 'content-security-policy' in checks['/']['headers']
+          assert 'strict-transport-security' in checks['/']['headers']
+
+          report = {
+              'validated_commit': os.popen('git rev-parse HEAD').read().strip(),
+              'validated_at_utc': datetime.now(timezone.utc).isoformat(),
+              'base_url': base,
+              'https': True,
+              'checks': {
+                  path: {
+                      'status': result['status'],
+                      'url': result['url'],
+                      'content_type': result['headers'].get('content-type'),
+                  }
+                  for path, result in checks.items()
+              },
+              'protected_route_checks': {path: result['status'] for path, result in protected.items()},
+              'health': health,
+              'ready': ready,
+              'chatgpt': chatgpt,
+              'cost': cost,
+              'wake': wake,
+              'security_headers': {
+                  key: checks['/']['headers'].get(key)
+                  for key in ('strict-transport-security', 'content-security-policy', 'x-content-type-options', 'referrer-policy')
+              },
+              'openai_api_requests': 0,
+              'api_cost_chf': 0,
+              'external_actions_executed': False,
+          }
+          Path('docs/hosted-zero-api-validation.json').write_text(json.dumps(report, indent=2) + '\n')
+          print(json.dumps(report, indent=2))
+          PY
+      - name: Persist hosted validation evidence
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence Hosted QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin main
+          git add docs/hosted-zero-api-validation.json
+          git commit -m 'Record hosted zero-API validation evidence' || exit 0
+          git push origin HEAD:main
