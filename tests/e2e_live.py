@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from playwright.sync_api import Browser, ConsoleMessage, Page, Request, sync_playwright
+from playwright.sync_api import Browser, Page, sync_playwright
 
 ORIGIN = "http://127.0.0.1:8000"
-OUT = Path("docs/e2e-redesign")
+OUT = Path("docs/e2e")
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -36,12 +36,9 @@ def assert_accessible_controls(page: Page) -> None:
     assert not unlabeled_fields, unlabeled_fields
 
 
-def open_private(page: Page, route: str = "today") -> None:
+def open_private(page: Page) -> None:
     page.goto(f"{ORIGIN}/#access=ci-private-access", wait_until="networkidle")
     page.get_by_role("heading", name="Today", exact=True).wait_for()
-    if route != "today":
-        page.evaluate(f"location.hash = '{route}'")
-        page.wait_for_load_state("networkidle")
 
 
 def screenshot(page: Page, name: str) -> None:
@@ -50,7 +47,12 @@ def screenshot(page: Page, name: str) -> None:
     page.screenshot(path=str(OUT / name), full_page=True)
 
 
-def new_page(browser: Browser, viewport: dict[str, int], console_errors: list[str], failed_requests: list[str]) -> tuple:
+def new_page(
+    browser: Browser,
+    viewport: dict[str, int],
+    console_errors: list[str],
+    failed_requests: list[str],
+) -> tuple:
     context = browser.new_context(viewport=viewport, device_scale_factor=1)
     page = context.new_page()
     page.on(
@@ -85,7 +87,7 @@ def run() -> None:
         open_private(page)
         page.get_by_text("Daily priority").wait_for()
         page.get_by_role("heading", name="Action queue").wait_for()
-        screenshot(page, "01-today-mobile-390.png")
+        screenshot(page, "after-01-today-mobile-390.png")
         steps.append("Today exposed one dominant priority and a bounded action queue")
 
         page.get_by_role("button", name="Roles", exact=True).click()
@@ -104,7 +106,7 @@ def run() -> None:
             "heading", name="Applied Machine Learning Research Engineer", exact=True
         ).wait_for()
         page.get_by_text("Why this employer may interview Navish").wait_for()
-        screenshot(page, "02-opportunity-workspace-mobile-390.png")
+        screenshot(page, "after-02-opportunity-workspace-mobile-390.png")
         steps.append("Opportunity import opened the canonical role workspace")
 
         page.get_by_role("button", name="Pursue", exact=True).click()
@@ -112,7 +114,7 @@ def run() -> None:
         page.get_by_role("button", name="Prepare package").click()
         page.get_by_role("heading", name="Application state").wait_for()
         page.get_by_text("Ready for review").wait_for()
-        screenshot(page, "03-application-workspace-mobile-390.png")
+        screenshot(page, "after-03-application-workspace-mobile-390.png")
         steps.append("Pursue created an evidence-linked package without submission")
 
         page.get_by_role("button", name="Close role workspace").click()
@@ -122,12 +124,12 @@ def run() -> None:
         stage = page.locator("select[data-application-stage]").first
         stage.select_option("Ready to apply")
         page.get_by_text("Ready to apply", exact=True).wait_for()
-        screenshot(page, "04-applications-list-mobile-390.png")
+        screenshot(page, "after-04-applications-list-mobile-390.png")
         steps.append("Application stage changed inline in one interaction")
 
         page.get_by_role("button", name="Pipeline", exact=True).click()
         page.get_by_role("heading", name="Preparing", exact=True).wait_for()
-        screenshot(page, "05-applications-pipeline-mobile-390.png")
+        screenshot(page, "after-05-applications-pipeline-mobile-390.png")
         steps.append("Functional pipeline rendered from canonical application records")
 
         page.get_by_role("button", name="Interviews", exact=True).click()
@@ -135,28 +137,28 @@ def run() -> None:
         page.get_by_text("Pre-interview mode").wait_for()
         page.locator("[data-complete-session]").first.click()
         page.get_by_text("Preparation recorded").wait_for()
-        screenshot(page, "06-interviews-mobile-390.png")
+        screenshot(page, "after-06-interviews-mobile-390.png")
         steps.append("Role-specific preparation recorded completion")
 
         page.get_by_role("button", name="More", exact=True).click()
         page.get_by_role("button", name="Network", exact=True).click()
         page.get_by_role("heading", name="Network", exact=True).wait_for()
         page.get_by_text("Access gaps").wait_for()
-        screenshot(page, "07-network-mobile-390.png")
+        screenshot(page, "after-07-network-mobile-390.png")
 
         page.get_by_role("button", name="More", exact=True).click()
         page.get_by_role("button", name="Assets", exact=True).click()
         page.get_by_role("heading", name="Assets", exact=True).wait_for()
         page.get_by_text("Role-specific packages").wait_for()
         page.get_by_text("Synthetic Acceptance Employer").wait_for()
-        screenshot(page, "08-assets-mobile-390.png")
+        screenshot(page, "after-08-assets-mobile-390.png")
         steps.append("Network and Assets reused the same role and evidence state")
 
         page.get_by_role("button", name="Today", exact=True).click()
         page.get_by_role("heading", name="Today", exact=True).wait_for()
         assert page.locator(".priority-card").count() == 1
         assert page.locator(".action-row").count() <= 3
-        screenshot(page, "09-today-after-workflow-mobile-390.png")
+        screenshot(page, "after-09-today-workflow-mobile-390.png")
         context.close()
 
         for label, viewport, route in [
@@ -174,7 +176,7 @@ def run() -> None:
             elif route == "applications":
                 page.get_by_role("button", name="Applications", exact=True).click()
                 page.get_by_role("heading", name="Applications", exact=True).wait_for()
-            screenshot(page, f"10-{label}-{route}.png")
+            screenshot(page, f"after-10-{label}-{route}.png")
             steps.append(f"{label} responsive layout passed for {route}")
             context.close()
 
@@ -189,12 +191,14 @@ def run() -> None:
         "failed_requests": failed_requests,
         "external_actions_executed": False,
         "before_screenshots": [
-            "docs/e2e/01-today-mobile.png",
-            "docs/e2e/05-today-desktop.png",
+            "01-today-mobile.png",
+            "05-today-desktop.png",
         ],
-        "after_screenshots": sorted(path.name for path in OUT.glob("*.png")),
+        "after_screenshots": sorted(
+            path.name for path in OUT.glob("after-*.png")
+        ),
     }
-    (OUT / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    (OUT / "redesign-report.json").write_text(json.dumps(report, indent=2) + "\n")
     assert not console_errors, console_errors
     assert not failed_requests, failed_requests
 
