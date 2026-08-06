@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import sys
 
 os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/scios-adversarial-ci.db")
 os.environ.setdefault("SCIOS_WORKER_ENABLED", "false")
@@ -94,6 +97,8 @@ def test_zero_cost_status_is_machine_checkable() -> None:
         assert payload["cost_chf"] == 0
         assert payload["paid_services_allowed"] is False
         assert payload["openai_api_enabled"] is False
+        assert payload["openai_request_budget"] == 0
+        assert payload["continuity"]["automatic_empty_database_restore"] is True
         assert payload["continuity"]["portable_json_restore"] is True
         assert payload["continuity"]["external_actions_in_restore"] is False
 
@@ -101,3 +106,28 @@ def test_zero_cost_status_is_machine_checkable() -> None:
         assert summary.status_code == 200
         assert summary.json()["zero_cost"]["cost_chf"] == 0
         assert summary.json()["external_actions_executed"] is False
+
+
+def test_expired_free_database_selects_ephemeral_zero_cost_fallback() -> None:
+    env = dict(os.environ)
+    env.update(
+        DATABASE_URL="postgresql://example.invalid/scios",
+        SCIOS_FREE_DATABASE_EXPIRES_AT="2000-01-01",
+        SCIOS_ALLOW_EPHEMERAL_FALLBACK="true",
+        SCIOS_EPHEMERAL_DATABASE_URL="sqlite:////tmp/scios-expiry-fallback-test.db",
+        SCIOS_WORKER_ENABLED="false",
+        SCIOS_SESSION_SECURE_COOKIE="false",
+    )
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import json; import app; "
+            "print(json.dumps({'db_url': app.legacy.DB_URL, "
+            "'fallback': __import__('os').environ.get('SCIOS_DATABASE_FALLBACK_ACTIVE')}))"
+        ),
+    ]
+    completed = subprocess.run(command, env=env, text=True, capture_output=True, check=True, timeout=45)
+    payload = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert payload["db_url"] == "sqlite:////tmp/scios-expiry-fallback-test.db"
+    assert payload["fallback"] == "true"
