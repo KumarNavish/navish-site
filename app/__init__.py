@@ -36,7 +36,6 @@ from .manual_import import install_manual_import  # noqa: E402
 from .public_ops import install_public_ops  # noqa: E402
 from .quality_overlay import install_quality_routes, install_reasoning_gates  # noqa: E402
 from .readiness import install_readiness  # noqa: E402
-from .render_postgres_link import install_render_postgres_link  # noqa: E402
 from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
 
@@ -50,7 +49,6 @@ install_public_ops(legacy, runtime)
 install_manual_import(legacy, runtime)
 install_quality_routes(legacy, runtime, intelligence_module)
 install_readiness(legacy)
-install_render_postgres_link(legacy)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
