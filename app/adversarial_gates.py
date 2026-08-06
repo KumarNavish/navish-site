@@ -108,9 +108,34 @@ def install_adversarial_gates(intelligence: Any) -> None:
         gaps = _hard_gaps(job, evidence)
         key = _role_key(job)
 
+        # A stated principal/staff/director or extreme tenure bar is a terminal
+        # screening mismatch. Adjacent technical overlap cannot soften it to an
+        # investigation recommendation.
+        if analysis.get("severe_seniority_mismatch"):
+            gaps = list(dict.fromkeys(["seniority and production-tenure requirements", *gaps]))
+            analysis.update(
+                fit_score=min(float(analysis.get("fit_score", 100)), 38.0),
+                interview_band="Very low",
+                interview_probability_range=[2, 12],
+                offer_probability_given_interview=[2, 10],
+                hiring_opportunity_value=min(float(analysis.get("hiring_opportunity_value", 100)), 1.4),
+                mandatory_evidence_strength=min(int(analysis.get("mandatory_evidence_strength", 100)), 28),
+                decision="Do not pursue",
+                primary_strategy="Reject this role and redirect effort to a role with an attainable seniority bar",
+                blocker=(
+                    "The published seniority, production-tenure and leadership requirements materially exceed the "
+                    "verified evidence. This is a hiring-screen mismatch, not a résumé wording problem."
+                ),
+                fastest_correction=(
+                    "Do not manufacture seniority evidence. Target an individual-contributor research or applied-ML role "
+                    "whose central work matches demonstrated capability."
+                ),
+                urgency="No application investment",
+                confidence="high",
+            )
         # Role-specific calibration uses only requirements visible in the
         # official listing. It does not invent employer preferences.
-        if "bug bounty switzerland::applied ai engineer" in key:
+        elif "bug bounty switzerland::applied ai engineer" in key:
             required = [
                 "shipped and maintained production AI/ML systems",
                 "large-scale software engineering ownership",
@@ -206,7 +231,7 @@ def install_adversarial_gates(intelligence: Any) -> None:
 
         analysis["hard_gate_reasons"] = gaps
         analysis["adversarial_gate_applied"] = bool(gaps)
-        analysis["analysis_method"] = f"{intelligence.MODEL_PROVIDER}+mandatory_evidence_gates_v1"
+        analysis["analysis_method"] = f"{intelligence.MODEL_PROVIDER}+mandatory_evidence_gates_v2"
         analysis["model_used"] = analysis["analysis_method"]
         analysis["model_fallback"] = True
         return analysis
