@@ -24,34 +24,44 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Exercise HTTPS, diagnostics, security, and public boundaries
+      - name: Exercise HTTPS, zero-cost controls, diagnostics, security, and public boundaries
         id: probe
         continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/scios-hosted
-          curl --fail --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
+          curl --fail --show-error --silent --retry 8 --retry-delay 5 --max-time 150 \
             --dump-header /tmp/scios-hosted/root.headers \
             --output /tmp/scios-hosted/root.html "$ORIGIN/"
-          curl --fail --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
-            --dump-header /tmp/scios-hosted/health.headers \
+          curl --fail --show-error --silent --retry 8 --retry-delay 5 --max-time 150 \
+            --output /tmp/scios-hosted/backup.js "$ORIGIN/assets/backup.js"
+          curl --fail --show-error --silent --retry 8 --retry-delay 5 --max-time 150 \
             --output /tmp/scios-hosted/health.json "$ORIGIN/healthz"
-          ready_status=$(curl --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
+          ready_status=$(curl --show-error --silent --retry 8 --retry-delay 5 --max-time 150 \
             --dump-header /tmp/scios-hosted/ready.headers \
             --output /tmp/scios-hosted/ready.json --write-out '%{http_code}' "$ORIGIN/readyz")
-          ops_status=$(curl --show-error --silent --retry 6 --retry-delay 5 --max-time 120 \
-            --dump-header /tmp/scios-hosted/ops.headers \
+          ops_status=$(curl --show-error --silent --retry 8 --retry-delay 5 --max-time 150 \
             --output /tmp/scios-hosted/ops.json --write-out '%{http_code}' "$ORIGIN/ops/summary")
+          cost_status=$(curl --show-error --silent --retry 8 --retry-delay 5 --max-time 150 \
+            --output /tmp/scios-hosted/cost.json --write-out '%{http_code}' "$ORIGIN/ops/cost")
           unauth_status=$(curl --show-error --silent --max-time 60 \
             --output /tmp/scios-hosted/unauth.json --write-out '%{http_code}' "$ORIGIN/api/live/profile")
+          export_unauth_status=$(curl --show-error --silent --max-time 60 \
+            --output /tmp/scios-hosted/export-unauth.json --write-out '%{http_code}' "$ORIGIN/api/backup/export")
+          import_unauth_status=$(curl --show-error --silent --max-time 60 \
+            -X POST -H 'Content-Type: application/json' -d '{"schema_version":1}' \
+            --output /tmp/scios-hosted/import-unauth.json --write-out '%{http_code}' "$ORIGIN/api/backup/import")
           csrf_status=$(curl --show-error --silent --max-time 60 \
             -X PUT -H 'Origin: https://adversarial.invalid' -H 'Content-Type: application/json' \
             -d '{"work_authorization":"tamper"}' \
             --output /tmp/scios-hosted/csrf.json --write-out '%{http_code}' "$ORIGIN/api/profile/facts")
           printf '%s' "$ready_status" > /tmp/scios-hosted/ready.status
           printf '%s' "$ops_status" > /tmp/scios-hosted/ops.status
+          printf '%s' "$cost_status" > /tmp/scios-hosted/cost.status
           printf '%s' "$unauth_status" > /tmp/scios-hosted/unauth.status
+          printf '%s' "$export_unauth_status" > /tmp/scios-hosted/export-unauth.status
+          printf '%s' "$import_unauth_status" > /tmp/scios-hosted/import-unauth.status
           printf '%s' "$csrf_status" > /tmp/scios-hosted/csrf.status
           python - <<'PY'
           import json
@@ -59,21 +69,36 @@ jobs:
 
           root_headers = Path('/tmp/scios-hosted/root.headers').read_text(errors='replace').lower()
           root_html = Path('/tmp/scios-hosted/root.html').read_text(errors='replace')
+          backup_js = Path('/tmp/scios-hosted/backup.js').read_text(errors='replace')
           health = json.loads(Path('/tmp/scios-hosted/health.json').read_text())
           ready = json.loads(Path('/tmp/scios-hosted/ready.json').read_text())
           ops = json.loads(Path('/tmp/scios-hosted/ops.json').read_text())
-          ready_status = int(Path('/tmp/scios-hosted/ready.status').read_text())
-          ops_status = int(Path('/tmp/scios-hosted/ops.status').read_text())
-          unauth_status = int(Path('/tmp/scios-hosted/unauth.status').read_text())
-          csrf_status = int(Path('/tmp/scios-hosted/csrf.status').read_text())
+          cost = json.loads(Path('/tmp/scios-hosted/cost.json').read_text())
+          status = lambda name: int(Path(f'/tmp/scios-hosted/{name}.status').read_text())
 
           assert 'Swiss Career Intelligence OS' in root_html
+          assert '/assets/backup.js' in root_html
+          assert 'scios_structured_backup_v1' in backup_js
           assert health.get('status') == 'ok'
-          assert ops_status == 200
-          assert unauth_status == 401
-          assert csrf_status == 403
+          assert status('ops') == 200
+          assert status('cost') == 200
+          assert status('unauth') == 401
+          assert status('export-unauth') == 401
+          assert status('import-unauth') == 401
+          assert status('csrf') == 403
           assert ops.get('external_actions_executed') is False
           assert ops.get('serious_roles_retained', 999) <= 5
+          zero_cost = ops.get('zero_cost') or {}
+          assert zero_cost.get('mode') == 'zero_cost'
+          assert zero_cost.get('cost_chf') == 0
+          assert zero_cost.get('paid_services_allowed') is False
+          assert zero_cost.get('openai_api_enabled') is False
+          assert zero_cost.get('continuity', {}).get('portable_json_export') is True
+          assert zero_cost.get('continuity', {}).get('portable_json_restore') is True
+          assert cost.get('mode') == 'zero_cost'
+          assert cost.get('cost_chf') == 0
+          assert cost.get('openai_request_budget') == 0
+          assert cost.get('continuity', {}).get('external_actions_in_restore') is False
           for required in (
               'strict-transport-security:',
               'content-security-policy:',
@@ -83,11 +108,11 @@ jobs:
           ):
               assert required in root_headers, required
 
-          if ready_status == 200:
+          if status('ready') == 200:
               assert ready.get('status') == 'ready'
               assert ready.get('checks', {}).get('postgresql_durability') is True
           else:
-              assert ready_status == 503
+              assert status('ready') == 503
               assert ready.get('status') == 'not_ready'
               assert ready.get('checks', {}).get('postgresql_durability') is False
           PY
@@ -130,12 +155,17 @@ jobs:
               'probe_result': os.environ.get('PROBE_OUTCOME', 'unknown'),
               'production_state': 'complete' if ready_status == 200 else 'blocked_by_postgresql_attachment',
               'root_status': 200 if Path('/tmp/scios-hosted/root.html').exists() else None,
+              'backup_asset_loaded': Path('/tmp/scios-hosted/backup.js').exists(),
               'healthz': load_json('health'),
               'readyz_status': ready_status,
               'readyz': load_json('ready'),
               'ops_status': load_status('ops'),
               'ops': load_json('ops'),
+              'cost_status': load_status('cost'),
+              'cost': load_json('cost'),
               'unauthenticated_private_api_status': load_status('unauth'),
+              'unauthenticated_backup_export_status': load_status('export-unauth'),
+              'unauthenticated_backup_import_status': load_status('import-unauth'),
               'cross_origin_mutation_status': load_status('csrf'),
               'security_headers': headers,
           }
