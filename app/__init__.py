@@ -21,15 +21,18 @@ sys.modules[_SPEC.name] = legacy
 _SPEC.loader.exec_module(legacy)
 app = legacy.app
 
-# The original SPA fallback was registered before the production upgrade APIs.
-# Move it behind the new routes so /api/live/* cannot be swallowed by the
-# catch-all HTML handler.
+# Remove legacy routes that would otherwise precede the production replacements,
+# then restore the SPA fallback only after every explicit API route is present.
 _spa_fallback = next((route for route in app.router.routes if getattr(route, "path", None) == "/{path:path}"), None)
 if _spa_fallback is not None:
     app.router.routes.remove(_spa_fallback)
+_legacy_import = next((route for route in app.router.routes if getattr(route, "path", None) == "/api/jobs/import"), None)
+if _legacy_import is not None:
+    app.router.routes.remove(_legacy_import)
 
 from . import intelligence as intelligence_module  # noqa: E402
 from .diagnostics import install_diagnostics  # noqa: E402
+from .manual_import import install_manual_import  # noqa: E402
 from .public_ops import install_public_ops  # noqa: E402
 from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
@@ -38,6 +41,7 @@ intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
 runtime = install(legacy)
 install_diagnostics(legacy, runtime)
 install_public_ops(legacy, runtime)
+install_manual_import(legacy, runtime)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
