@@ -6,7 +6,6 @@ import hmac
 import importlib.util
 import io
 import os
-import re
 import secrets
 import shutil
 import sys
@@ -20,19 +19,18 @@ from sqlalchemy import select
 _REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 _WORKFLOW_PATH = _REPOSITORY_ROOT / ".github" / "workflows" / "publish-live.yml"
 _RELEASE_ROOT = Path("/tmp/scios-automated-live-3")
+_BASE64_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
 
 
 def _safe_extract_release() -> Path:
-    """Expand the validated release payload embedded in the repository."""
+    """Expand the checksum-stable release payload embedded in the repository."""
 
     workflow = _WORKFLOW_PATH.read_text(encoding="utf-8")
     start = workflow.find("H4sI")
-    if start < 0:
+    end = workflow.find("=", start)
+    if start < 0 or end < 0:
         raise RuntimeError("The validated live release payload is unavailable")
-    closing = re.search(r"\r?\n[ \t]*PAYLOAD(?:\r?\n|$)", workflow[start:])
-    if closing is None:
-        raise RuntimeError("The validated live release payload is incomplete")
-    encoded = "".join(workflow[start : start + closing.start()].split())
+    encoded = "".join(char for char in workflow[start : end + 1] if char in _BASE64_ALPHABET)
     archive = base64.b64decode(encoded, validate=True)
     digest = hashlib.sha256(archive).hexdigest()
     marker = _RELEASE_ROOT / ".archive-sha256"
