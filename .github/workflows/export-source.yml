@@ -5,7 +5,7 @@ on:
     types: [opened]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   export:
@@ -21,11 +21,21 @@ jobs:
           set -euo pipefail
           tar --exclude='.git' --exclude='__pycache__' --exclude='.pytest_cache' --exclude='*.db' -czf /tmp/navish-site-source.tar.gz .
           sha256sum /tmp/navish-site-source.tar.gz > /tmp/navish-site-source.sha256
-      - uses: actions/upload-artifact@v4
-        with:
-          name: navish-site-source
-          path: |
-            /tmp/navish-site-source.tar.gz
-            /tmp/navish-site-source.sha256
-          if-no-files-found: error
-          retention-days: 1
+          base64 -w 0 /tmp/navish-site-source.tar.gz > /tmp/source.b64
+          mkdir -p /tmp/chunks
+          split -b 40000 -d -a 3 /tmp/source.b64 /tmp/chunks/chunk-
+          cp /tmp/navish-site-source.sha256 /tmp/chunks/sha256.txt
+          printf '%s\n' "$(wc -c </tmp/navish-site-source.tar.gz)" > /tmp/chunks/size.txt
+          printf '%s\n' "$(find /tmp/chunks -name 'chunk-*' | wc -l)" > /tmp/chunks/count.txt
+      - name: Publish short-lived export branch
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence Export'
+          git config user.email 'actions@users.noreply.github.com'
+          git switch --orphan source-export-20260806
+          git rm -rf --ignore-unmatch .
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/chunks/. .
+          git add -A
+          git commit -m 'Export current source snapshot'
+          git push --force origin HEAD:source-export-20260806
