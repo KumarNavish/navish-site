@@ -1,0 +1,1 @@
+Trigger the free hosted scheduler and verify the deployed Swiss Career Intelligence OS.
