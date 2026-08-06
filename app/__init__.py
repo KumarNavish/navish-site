@@ -79,6 +79,7 @@ from .manual_import import install_manual_import  # noqa: E402
 from .public_ops import install_public_ops  # noqa: E402
 from .quality_overlay import install_quality_routes, install_reasoning_gates  # noqa: E402
 from .readiness import install_readiness  # noqa: E402
+from .self_validation import install_self_validation  # noqa: E402
 from .source_catalog import LIVE_SOURCES  # noqa: E402
 from .upgrade import install  # noqa: E402
 from .workspace import install_workspace  # noqa: E402
@@ -86,7 +87,7 @@ from .zero_cost_status import install_zero_cost_status  # noqa: E402
 
 intelligence_module.OFFICIAL_SOURCES = LIVE_SOURCES
 intelligence_module.MODEL_PROVIDER = "deterministic_gates_v8"
-intelligence_module.APP_REVISION = "2026.08.06-live.10-zero-api"
+intelligence_module.APP_REVISION = "2026.08.06-live.11-zero-api"
 install_reasoning_gates(intelligence_module)
 install_adversarial_gates(intelligence_module)
 runtime = install(legacy)
@@ -99,6 +100,7 @@ install_readiness(legacy)
 install_backup(legacy, runtime)
 install_zero_cost_status(legacy, intelligence_module)
 install_chatgpt_native(legacy, runtime, intelligence_module)
+install_self_validation(legacy)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
