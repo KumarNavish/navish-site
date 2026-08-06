@@ -3,7 +3,7 @@ name: Production validation
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, ux-workflow-redesign]
     paths:
       - 'app.py'
       - 'app/**'
@@ -18,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: scios-production-validation
+  group: scios-production-validation-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -102,6 +102,10 @@ jobs:
           }
           Path('docs/ci-live.json').write_text(json.dumps(payload, indent=2) + '\n')
           PY
+          if [ "$GITHUB_REF_NAME" != 'main' ]; then
+            echo 'Branch validation complete; evidence remains in workflow logs until merge.'
+            exit 0
+          fi
           git config user.name 'Swiss Career Intelligence CI'
           git config user.email 'actions@users.noreply.github.com'
           git fetch origin main
