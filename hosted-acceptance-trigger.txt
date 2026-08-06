@@ -1,1 +1,1 @@
-Externally verify the live.7 adversarial scoring release, free PostgreSQL readiness, CHF 0 controls, browser-held backup asset, authenticated backup boundary, HTTPS security, source execution, and the maximum-five role portfolio.
+Externally verify the final workflow redesign: HTTPS, PostgreSQL readiness, security boundaries, strict role portfolio, canonical application state, and zero external hiring actions.
