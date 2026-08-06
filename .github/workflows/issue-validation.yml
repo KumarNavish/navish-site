@@ -1,0 +1,132 @@
+name: Exact production validation request
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scios-exact-production-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: contains(github.event.issue.title, '[SCIOS VALIDATE]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-exact-validation.db
+      SCIOS_WORKER_ENABLED: 'false'
+      SCIOS_SESSION_SECURE_COOKIE: 'false'
+      SCIOS_INTERNAL_SECRET: exact-validation-secret
+      SCIOS_ACCESS_TOKEN: ci-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+      OPENAI_ENABLED: 'false'
+      PAID_SERVICES_ALLOWED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: pip
+      - name: Install application and browser
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt playwright==1.54.0
+          python -m playwright install --with-deps chromium
+      - name: Compile, validate modules and run all tests
+        id: suite
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          failed=0
+          git rev-parse HEAD > /tmp/tested-commit.txt
+          python -m compileall -q app.py app tests 2>&1 | tee /tmp/compile.txt || failed=1
+          : > /tmp/node.txt
+          for file in static/*.js; do
+            if grep -Eq '^(import|export) ' "$file"; then
+              node --input-type=module --check < "$file" >> /tmp/node.txt 2>&1 || failed=1
+            else
+              node --check "$file" >> /tmp/node.txt 2>&1 || failed=1
+            fi
+          done
+          cat /tmp/node.txt
+          pytest -q 2>&1 | tee /tmp/pytest.txt || failed=1
+          exit "$failed"
+      - name: Start production application
+        id: start
+        continue-on-error: true
+        shell: bash
+        run: |
+          uvicorn app:app --host 127.0.0.1 --port 8000 > /tmp/scios-exact-server.log 2>&1 &
+          echo $! > /tmp/scios-exact-server.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8000/readyz >/tmp/ready.json; then
+              cat /tmp/ready.json
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/scios-exact-server.log
+          exit 1
+      - name: Exercise responsive browser workflow
+        id: browser
+        if: steps.start.outcome == 'success'
+        continue-on-error: true
+        run: python tests/e2e_live.py
+      - name: Persist exact validation evidence
+        if: always()
+        env:
+          SUITE_OUTCOME: ${{ steps.suite.outcome }}
+          START_OUTCOME: ${{ steps.start.outcome }}
+          BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/scios-exact-server.pid ]; then kill "$(cat /tmp/scios-exact-server.pid)" || true; fi
+          mkdir -p docs
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def lines(path, limit=80):
+              p = Path(path)
+              return p.read_text(errors='replace').splitlines()[-limit:] if p.exists() else []
+
+          browser_report = None
+          report_path = Path('docs/e2e/redesign-report.json')
+          if report_path.exists():
+              browser_report = json.loads(report_path.read_text())
+          payload = {
+              'tested_commit': Path('/tmp/tested-commit.txt').read_text().strip() if Path('/tmp/tested-commit.txt').exists() else None,
+              'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
+              'suite_result': os.environ.get('SUITE_OUTCOME'),
+              'startup_result': os.environ.get('START_OUTCOME'),
+              'browser_result': os.environ.get('BROWSER_OUTCOME'),
+              'python_compile': lines('/tmp/compile.txt'),
+              'javascript_modules': lines('/tmp/node.txt'),
+              'pytest': lines('/tmp/pytest.txt'),
+              'readyz': json.loads(Path('/tmp/ready.json').read_text()) if Path('/tmp/ready.json').exists() else None,
+              'browser': browser_report,
+              'server_log_tail': lines('/tmp/scios-exact-server.log', 50),
+              'external_actions_executed': False,
+          }
+          Path('docs/final-redesign-validation.json').write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'Swiss Career Intelligence QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin main
+          git add docs/final-redesign-validation.json docs/e2e
+          git commit -m 'Record final workflow redesign validation evidence' || exit 0
+          git push origin HEAD:main
+      - name: Enforce exact validation
+        if: always() && (steps.suite.outcome != 'success' || steps.start.outcome != 'success' || steps.browser.outcome != 'success')
+        run: exit 1
