@@ -25,24 +25,22 @@ jobs:
 
           intelligence = Path('app/intelligence.py')
           text = intelligence.read_text()
-          old = '    "c\\\\+\\\\+": r"c\\\\+\\\\+",'
-          new = '    "c++": r"c\\\\+\\\\+",'
-          if old not in text:
-              raise SystemExit('Expected C++ key was not found')
-          intelligence.write_text(text.replace(old, new, 1))
+          updated = text.replace('"c\\+\\+"', '"c++"', 1)
+          if updated == text:
+              raise SystemExit('Expected escaped C++ dictionary key was not found')
+          intelligence.write_text(updated)
 
           upgrade = Path('app/upgrade.py')
           text = upgrade.read_text()
           decorator = '    @legacy.app.on_event("startup")\n    def automation_startup() -> None:'
-          replacement = '    def automation_startup() -> None:'
           if decorator not in text:
               raise SystemExit('Expected startup decorator was not found')
-          text = text.replace(decorator, replacement, 1)
+          text = text.replace(decorator, '    def automation_startup() -> None:', 1)
           anchor = '        if os.getenv("SCIOS_WORKER_ENABLED", "true").lower() == "true":\n            start_worker()\n\n    @legacy.app.get("/healthz")'
-          inserted = '        if os.getenv("SCIOS_WORKER_ENABLED", "true").lower() == "true":\n            start_worker()\n\n    legacy.app.router.on_startup.append(automation_startup)\n\n    @legacy.app.get("/healthz")'
           if anchor not in text:
               raise SystemExit('Expected startup registration anchor was not found')
-          upgrade.write_text(text.replace(anchor, inserted, 1))
+          text = text.replace(anchor, '        if os.getenv("SCIOS_WORKER_ENABLED", "true").lower() == "true":\n            start_worker()\n\n    legacy.app.router.on_startup.append(automation_startup)\n\n    @legacy.app.get("/healthz")', 1)
+          upgrade.write_text(text)
           PY
           python -W error::SyntaxWarning -m compileall -q app
           git config user.name 'Swiss Career Intelligence Maintainer'
