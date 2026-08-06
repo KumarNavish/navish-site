@@ -1,0 +1,31 @@
+name: Export repository source
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: contains(github.event.issue.title, '[SCIOS EXPORT]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Build clean source archive
+        run: |
+          set -euo pipefail
+          tar --exclude='.git' --exclude='__pycache__' --exclude='.pytest_cache' --exclude='*.db' -czf /tmp/navish-site-source.tar.gz .
+          sha256sum /tmp/navish-site-source.tar.gz > /tmp/navish-site-source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: navish-site-source
+          path: |
+            /tmp/navish-site-source.tar.gz
+            /tmp/navish-site-source.sha256
+          if-no-files-found: error
+          retention-days: 1
