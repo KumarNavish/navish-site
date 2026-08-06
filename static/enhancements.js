@@ -7,7 +7,7 @@
       const role = row?.querySelector(".role-cell strong")?.textContent?.trim() || "application";
       control.setAttribute("aria-label", `Stage for ${role}`);
     });
-    document.querySelectorAll("[data-open-role][tabindex='0']:not([role])").forEach((row) => row.setAttribute("role", "button"));
+    document.querySelectorAll(".mobile-data-row[data-open-role][tabindex='0']:not([role]), .kanban-card[data-open-role][tabindex='0']:not([role])").forEach((row) => row.setAttribute("role", "button"));
   }
 
   document.addEventListener("click", (event) => {
