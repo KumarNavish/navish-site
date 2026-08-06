@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import importlib.util
+import json
 import os
 import secrets
 import sys
@@ -49,6 +50,21 @@ install_public_ops(legacy, runtime)
 install_manual_import(legacy, runtime)
 install_quality_routes(legacy, runtime, intelligence_module)
 install_readiness(legacy)
+
+# One-deploy diagnostic: names only, never values. This checks whether an
+# already-configured database reference exists under a nonstandard name or as a
+# Render secret file before concluding that an account authorization is needed.
+_name_markers = ("DB", "DATABASE", "POSTGRES", "PG", "SQL", "RENDER")
+_relevant_names = sorted(
+    key for key in os.environ if any(marker in key.upper() for marker in _name_markers)
+)
+_secret_root = Path("/etc/secrets")
+_secret_names = sorted(path.name for path in _secret_root.iterdir() if path.is_file()) if _secret_root.exists() else []
+print(
+    "SCIOS_CONFIG_NAME_AUDIT "
+    + json.dumps({"environment_names": _relevant_names, "secret_file_names": _secret_names}),
+    flush=True,
+)
 
 if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
