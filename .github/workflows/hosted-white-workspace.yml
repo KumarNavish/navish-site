@@ -32,14 +32,14 @@ jobs:
           mkdir -p /tmp/white-workspace
           for attempt in {1..12}; do
             if curl --fail --silent --show-error --max-time 90 "$ORIGIN/" -o /tmp/white-workspace/index.html \
-              && grep -q 'workspace-white.css?v=workspace1' /tmp/white-workspace/index.html; then
+              && grep -q 'workspace-white.css?v=workspace9' /tmp/white-workspace/index.html; then
               break
             fi
             sleep 10
           done
-          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/workspace-white.css?v=workspace1" -o /tmp/white-workspace/workspace-white.css
-          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/personal-workspace.js?v=workspace1" -o /tmp/white-workspace/personal-workspace.js
-          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/workspace-access.js?v=workspace1" -o /tmp/white-workspace/workspace-access.js
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/workspace-white.css?v=workspace9" -o /tmp/white-workspace/workspace-white.css
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/personal-workspace.js?v=workspace9" -o /tmp/white-workspace/personal-workspace.js
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/workspace-access.js?v=workspace9" -o /tmp/white-workspace/workspace-access.js
           curl --fail --silent --show-error --max-time 90 "$ORIGIN/healthz" -o /tmp/white-workspace/health.json
           curl --fail --silent --show-error --max-time 90 "$ORIGIN/readyz" -o /tmp/white-workspace/ready.json
           python - <<'PY'
@@ -52,14 +52,17 @@ jobs:
           health=json.loads(Path('/tmp/white-workspace/health.json').read_text())
           ready=json.loads(Path('/tmp/white-workspace/ready.json').read_text())
           assert 'content="#ffffff"' in html
-          assert 'workspace-white.css?v=workspace1' in html
-          assert 'personal-workspace.js?v=workspace1' in access
+          assert 'workspace-white.css?v=workspace9' in html
+          assert 'personal-workspace.js?v=workspace9' in access
           assert 'frictionless.js' not in html
           assert 'class="detail-drawer"' not in html
           assert '--canvas:#ffffff' in css
           assert '.object-page' in css
           assert 'id="embedded-back"' in js
-          assert 'embedStagedDetail' in js
+          assert 'embedStagedDetail' not in js
+          assert 'id="embedded-detail-content"' in js
+          assert 'const mount = $("#embedded-detail-content")' in js
+          assert 'mount,' in js
           assert 'workspace.returnContext' in js
           assert '#role/${target.id}/${target.section}' in js
           assert health.get('status') == 'ok'
@@ -120,7 +123,8 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue comment "${{ github.event.issue.number }}" --body "Hosted white workspace verification: ${{ steps.probe.outcome }}"
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --body "Hosted white workspace verification: ${{ steps.probe.outcome }}"
       - name: Enforce result
         if: always() && steps.probe.outcome != 'success'
         run: exit 1
