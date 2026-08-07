@@ -41,27 +41,21 @@ jobs:
           set -euo pipefail
           set +x
           mkdir -p /tmp/hosted-auth-qa
-          token=$(python - <<'PY'
-          import secrets
-          print(secrets.token_urlsafe(48))
-          PY
-          )
+          token=$(python -c 'import secrets; print(secrets.token_urlsafe(48))')
           echo "::add-mask::$token"
           printf '%s' "$token" > /tmp/hosted-auth-qa/raw-token
           TOKEN="$token" python - <<'PY'
           import hashlib, json, os
           from datetime import datetime, timedelta, timezone
           from pathlib import Path
-
           issued = datetime.now(timezone.utc)
-          payload = {
+          Path('.hosted-qa-token.json').write_text(json.dumps({
               'audience': 'scios-hosted-browser-qa',
               'sha256': hashlib.sha256(os.environ['TOKEN'].encode()).hexdigest(),
               'issued_at_utc': issued.isoformat().replace('+00:00', 'Z'),
               'expires_at_utc': (issued + timedelta(minutes=19)).isoformat().replace('+00:00', 'Z'),
               'workflow_run_id': os.environ['GITHUB_RUN_ID'],
-          }
-          Path('.hosted-qa-token.json').write_text(json.dumps(payload, indent=2) + '\n')
+          }, indent=2) + '\n')
           PY
           git config user.name 'Swiss Career Intelligence Hosted QA'
           git config user.email 'actions@users.noreply.github.com'
@@ -72,18 +66,13 @@ jobs:
 
           for attempt in $(seq 1 72); do
             sleep 5
-            ready=$(curl --silent --show-error --max-time 45 -o /tmp/hosted-auth-qa/ready-active.json -w '%{http_code}' "$ORIGIN/readyz" || true)
-            body=$(TOKEN="$token" python - <<'PY'
-          import json, os
-          print(json.dumps({'token': os.environ['TOKEN']}))
-          PY
-          )
-            access=$(curl --silent --show-error --max-time 45 -o /tmp/hosted-auth-qa/access-active.json -w '%{http_code}' \
-              -X POST -H 'Content-Type: application/json' --data "$body" "$ORIGIN/api/auth/access" || true)
-            if [ "$ready" = '200' ] && [ "$access" = '200' ]; then break; fi
+            ready=$(curl -sS --max-time 45 -o /tmp/hosted-auth-qa/ready-active.json -w '%{http_code}' "$ORIGIN/readyz" || true)
+            body=$(TOKEN="$token" python -c 'import json,os; print(json.dumps({"token":os.environ["TOKEN"]}))')
+            access=$(curl -sS --max-time 45 -o /tmp/hosted-auth-qa/access-active.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data "$body" "$ORIGIN/api/auth/access" || true)
+            if [ "$ready" = 200 ] && [ "$access" = 200 ]; then break; fi
           done
-          test "${ready:-000}" = '200'
-          test "${access:-000}" = '200'
+          test "${ready:-000}" = 200
+          test "${access:-000}" = 200
 
       - name: Exercise the actual authenticated HTTPS product
         id: browser
@@ -94,9 +83,7 @@ jobs:
           export QA_ACCESS_TOKEN="$(cat /tmp/hosted-auth-qa/raw-token)"
           python - <<'PY'
           from __future__ import annotations
-
-          import json
-          import os
+          import json, os
           from datetime import datetime, timezone
           from pathlib import Path
           from playwright.sync_api import sync_playwright
@@ -110,12 +97,23 @@ jobs:
               'tested_source_commit': os.environ['GITHUB_SHA'],
               'activation_commit': (out / 'activation-commit.txt').read_text().strip(),
               'viewports': {},
-              'console_warnings_or_errors': [],
-              'page_errors': [],
-              'failed_requests': [],
-              'http_errors': [],
+              'console_warnings_or_errors': [], 'page_errors': [],
+              'failed_requests': [], 'http_errors': [],
               'external_hiring_actions_executed': False,
           }
+
+          def visible_text(locator) -> str:
+              locator.wait_for(timeout=60000)
+              value = locator.inner_text().strip()
+              assert value
+              return value
+
+          def no_clutter(page) -> None:
+              assert page.locator('#detail-drawer').is_hidden()
+              assert page.locator('.detail-footer').count() == 0
+              assert page.locator('.role-continuity-summary').count() == 0
+              assert page.locator('.detail-summary-grid').count() == 0
+              assert page.locator('.decision-evidence').count() == 0
 
           def run_viewport(browser, name: str, width: int, height: int) -> None:
               context = browser.new_context(viewport={'width': width, 'height': height})
@@ -127,75 +125,69 @@ jobs:
               page.on('response', lambda response: http_errors.append({'url': response.url, 'status': response.status}) if response.status >= 400 else None)
 
               response = page.goto(f'{origin}/#access={token}', wait_until='networkidle', timeout=180000)
-              assert response is not None and response.status == 200
+              assert response and response.status == 200
               page.locator('#app:not([hidden])').wait_for(timeout=60000)
-              page.get_by_role('heading', name='Today', exact=True).wait_for(timeout=60000)
+              visible_text(page.get_by_role('heading', name='Today', exact=True))
               assert page.locator('#auth').is_hidden()
               body_length = len(page.locator('body').inner_text().strip())
               assert body_length > 100
-              overflow = page.evaluate('Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth')
+              overflow = page.evaluate('Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth')
               assert overflow <= 1, overflow
-              page.screenshot(path=str(out / f'{name}-01-today.png'), full_page=False)
+              assert page.locator('.primary-move').count() == 1
+              assert page.locator('.primary-move .button.primary').count() <= 1
+              page.screenshot(path=str(out / f'{name}-01-today.png'))
 
               page.get_by_role('button', name='Roles' if width < 700 else 'Opportunities', exact=True).click()
-              page.get_by_role('heading', name='Opportunities', exact=True).wait_for(timeout=60000)
+              visible_text(page.get_by_role('heading', name='Opportunities', exact=True))
               role = page.locator('[data-open-role]:visible').first
               role.wait_for(timeout=60000)
               role.click()
               page.locator('.object-page').wait_for(timeout=60000)
-              page.locator('#embedded-back').wait_for(timeout=60000)
-              page.locator('.detail-header h1').wait_for(timeout=60000)
-              assert page.locator('#detail-drawer').is_hidden()
-              assert page.locator('.detail-footer').count() == 0
-              assert page.locator('.role-continuity-summary').count() == 0
+              back_label = visible_text(page.locator('#embedded-back'))
+              visible_text(page.locator('.detail-header h1'))
+              no_clutter(page)
+              assert page.locator('.role-decision-flow').count() == 1
+              assert page.locator('.detail-header .primary-cta').count() == 1
               assert '#role/' in page.url
-              back_label = page.locator('#embedded-back').inner_text()
               role_id = page.url.split('#role/', 1)[1].split('/', 1)[0]
-              page.screenshot(path=str(out / f'{name}-02-role-overview.png'), full_page=False)
+              page.screenshot(path=str(out / f'{name}-02-role-overview.png'))
 
-              # Reproduce the exact deep-link family that was visibly broken in
-              # production: a role-specific application page opened directly.
               page.goto(f'{origin}/?hosted=application#role/{role_id}/application', wait_until='networkidle', timeout=180000)
               page.locator('#app:not([hidden])').wait_for(timeout=60000)
               page.locator('.object-page').wait_for(timeout=60000)
-              page.get_by_role('button', name='← Applications').wait_for(timeout=60000)
+              visible_text(page.get_by_role('button', name='← Applications'))
               assert page.locator('#route-title').inner_text() == 'Application'
               assert page.locator('.detail-tabs [data-detail-tab="application"].active').count() == 1
-              assert page.locator('.detail-footer').count() == 0
-              assert page.locator('.role-continuity-summary').count() == 0
-              next_action_color = page.locator('#detail-next-action').evaluate('node => getComputedStyle(node).color')
-              assert next_action_color in {'rgb(17, 24, 39)', 'rgb(15, 23, 42)'}, next_action_color
-              page.screenshot(path=str(out / f'{name}-03-role-application.png'), full_page=False)
+              assert page.locator('.application-flow').count() == 1
+              visible_text(page.locator('#detail-next-action'))
+              no_clutter(page)
+              page.screenshot(path=str(out / f'{name}-03-role-application.png'))
 
               page.locator('.detail-tabs [data-detail-tab="preparation"]:visible').click()
               page.locator('.detail-tabs [data-detail-tab="preparation"].active').wait_for(timeout=60000)
-              assert page.locator('#route-title').inner_text() == 'Preparation'
-              assert '#role/' in page.url and page.url.endswith('/preparation')
-              page.screenshot(path=str(out / f'{name}-04-role-preparation.png'), full_page=False)
+              assert page.locator('#route-title').inner_text() == 'Practice'
+              assert page.url.endswith('/preparation')
+              assert page.locator('.practice-flow').count() == 1
+              no_clutter(page)
+              page.screenshot(path=str(out / f'{name}-04-role-practice.png'))
 
               page.get_by_role('button', name='Apply' if width < 700 else 'Applications', exact=True).click()
-              page.get_by_role('heading', name='Applications', exact=True).wait_for(timeout=60000)
-              page.screenshot(path=str(out / f'{name}-05-applications.png'), full_page=False)
+              visible_text(page.get_by_role('heading', name='Applications', exact=True))
+              page.screenshot(path=str(out / f'{name}-05-applications.png'))
               page.locator('[data-route="interviews"]:visible').first.click()
-              page.get_by_role('heading', name='Prepare', exact=True).wait_for(timeout=60000)
-              page.screenshot(path=str(out / f'{name}-06-prepare.png'), full_page=False)
+              visible_text(page.get_by_role('heading', name='Prepare', exact=True))
+              page.screenshot(path=str(out / f'{name}-06-prepare.png'))
               page.reload(wait_until='networkidle', timeout=180000)
               page.locator('#app:not([hidden])').wait_for(timeout=60000)
               assert page.locator('#auth').is_hidden()
 
               report['viewports'][name] = {
-                  'url': page.url,
-                  'title': page.title(),
-                  'body_text_length': body_length,
-                  'app_visible': page.locator('#app').is_visible(),
-                  'auth_hidden': page.locator('#auth').is_hidden(),
-                  'horizontal_overflow_px': overflow,
-                  'embedded_role_page_opened': True,
-                  'back_action_label': back_label,
-                  'direct_role_application_opened': True,
-                  'role_preparation_opened': True,
-                  'applications_page_opened': True,
-                  'preparation_page_opened': True,
+                  'url': page.url, 'title': page.title(),
+                  'body_text_length': body_length, 'app_visible': page.locator('#app').is_visible(),
+                  'auth_hidden': page.locator('#auth').is_hidden(), 'horizontal_overflow_px': overflow,
+                  'embedded_role_page_opened': True, 'back_action_label': back_label,
+                  'direct_role_application_opened': True, 'role_practice_opened': True,
+                  'applications_page_opened': True, 'prepare_page_opened': True,
                   'session_persisted_after_reload': True,
               }
               report['console_warnings_or_errors'].extend(console)
@@ -237,18 +229,13 @@ jobs:
 
           for attempt in $(seq 1 72); do
             sleep 5
-            ready=$(curl --silent --show-error --max-time 45 -o /tmp/hosted-auth-qa/ready-final.json -w '%{http_code}' "$ORIGIN/readyz" || true)
-            body=$(TOKEN="$token" python - <<'PY'
-          import json, os
-          print(json.dumps({'token': os.environ.get('TOKEN', '')}))
-          PY
-          )
-            access=$(curl --silent --show-error --max-time 45 -o /tmp/hosted-auth-qa/access-revoked.json -w '%{http_code}' \
-              -X POST -H 'Content-Type: application/json' --data "$body" "$ORIGIN/api/auth/access" || true)
-            if [ "$ready" = '200' ] && [ "$access" = '403' ]; then break; fi
+            ready=$(curl -sS --max-time 45 -o /tmp/hosted-auth-qa/ready-final.json -w '%{http_code}' "$ORIGIN/readyz" || true)
+            body=$(TOKEN="$token" python -c 'import json,os; print(json.dumps({"token":os.environ.get("TOKEN","")}))')
+            access=$(curl -sS --max-time 45 -o /tmp/hosted-auth-qa/access-revoked.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data "$body" "$ORIGIN/api/auth/access" || true)
+            if [ "$ready" = 200 ] && [ "$access" = 403 ]; then break; fi
           done
-          test "${ready:-000}" = '200'
-          test "${access:-000}" = '403'
+          test "${ready:-000}" = 200
+          test "${access:-000}" = 403
           rm -f /tmp/hosted-auth-qa/raw-token
 
       - uses: actions/upload-artifact@v4
@@ -264,8 +251,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" \
-            --body "Hosted authenticated browser acceptance: activation=${{ steps.activate.outcome }}, browser=${{ steps.browser.outcome }}, revocation=${{ steps.revoke.outcome }}; workflow run ID=${{ github.run_id }}."
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Hosted authenticated browser acceptance: activation=${{ steps.activate.outcome }}, browser=${{ steps.browser.outcome }}, revocation=${{ steps.revoke.outcome }}; workflow run ID=${{ github.run_id }}."
 
       - name: Enforce hosted acceptance
         if: always() && (steps.activate.outcome != 'success' || steps.browser.outcome != 'success' || steps.revoke.outcome != 'success')
