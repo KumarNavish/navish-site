@@ -111,6 +111,7 @@ export function formatRelative(value) {
   if (Number.isNaN(date.getTime())) return String(value);
   const minutes = Math.round((date.getTime() - Date.now()) / 60000);
   const absolute = Math.abs(minutes);
+  if (absolute < 1) return "Due now";
   if (absolute < 60) return minutes >= 0 ? `in ${absolute} min` : `${absolute} min ago`;
   const hours = Math.round(absolute / 60);
   if (hours < 48) return minutes >= 0 ? `in ${hours} hr` : `${hours} hr ago`;
@@ -136,12 +137,26 @@ export function badge(text, tone = "neutral", extra = "") {
   return `<span class="status-badge ${tone} ${extra}">${escapeHtml(text)}</span>`;
 }
 
+let toastTimer = null;
+
+export function clearToast() {
+  const element = $("#toast");
+  if (toastTimer !== null) {
+    window.clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  if (!element) return;
+  element.classList.remove("show");
+  element.textContent = "";
+}
+
 export function toast(message) {
   const element = $("#toast");
   if (!element) return;
+  clearToast();
   element.textContent = message;
   element.classList.add("show");
-  window.setTimeout(() => element.classList.remove("show"), 2800);
+  toastTimer = window.setTimeout(clearToast, 2200);
 }
 
 export function loading(message = "Loading hiring intelligence…") {
@@ -166,7 +181,8 @@ export function button(label, { tone = "primary", iconName = "", attrs = "", com
 
 export function progress(value, label = "") {
   const safe = Math.max(0, Math.min(100, Number(value) || 0));
-  return `<div class="progress" ${label ? `aria-label="${escapeHtml(label)}"` : ""}><span style="width:${safe}%"></span></div>`;
+  const accessible = label ? ` aria-label="${escapeHtml(label)}"` : "";
+  return `<progress class="progress" max="100" value="${safe}"${accessible}>${safe}%</progress>`;
 }
 
 export function setTopbar(routeName) {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/scios-ci.db")
@@ -85,13 +86,21 @@ def test_evidence_matching_and_package_claim_lineage() -> None:
     evidence = intelligence.canonical_evidence()
     job = fake_source({"slug": "test", "name": "Test official ATS"})[0][0]
     analysis = intelligence.analyze_role(job, evidence)
-    assert analysis["decision"] in {"Strongly pursue", "Pursue", "Investigate one blocker"}
+    assert analysis["decision"] == "Strongly pursue"
     assert analysis["matches"]["direct"]
+    assert analysis["matches"]["missing"] == []
+    experimental = next(match for match in analysis["matches"]["direct"] if match["requirement"] == "experimental design")
+    assert experimental["evidence"] == "Experimental design and reproducibility"
+    assert analysis["compensation"]["type"] == "published base"
+    assert analysis["compensation"]["confidence"] == "high"
     assert analysis["interview_probability_range"][0] <= analysis["interview_probability_range"][1]
     package = intelligence.application_package(job, analysis, evidence)
     assert package["external_action_executed"] is False
     assert package["evidence_claims"]
     assert all(claim["source"] and claim["evidence"] and claim["validated"] for claim in package["evidence_claims"])
+    assert package["projects"][0] == "CL-PLO"
+    assert package["publications"]
+    assert all(row["strength"] != "missing" for row in package["requirement_matrix"])
     assert any("Transformers" in claim or "PyTorch" in claim for claim in package["prohibited_claims"])
 
 
@@ -155,6 +164,32 @@ def test_private_mobile_workflow_and_security(client: TestClient, monkeypatch: p
         headers={"Origin": "https://evil.example"},
     )
     assert blocked.status_code == 403
+
+
+def test_orphan_preparation_is_not_rendered_as_a_generic_role(client: TestClient) -> None:
+    authenticate(client)
+    with legacy.SessionLocal() as db:
+        user = db.scalar(select(legacy.User).where(legacy.User.email == legacy.OWNER_EMAIL))
+        assert user is not None
+        db.add(
+            legacy.Practice(
+                user_id=user.id,
+                job_id=999999,
+                competency="Recruiter screen",
+                prompt="Explain the role fit.",
+                duration=25,
+                due_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+
+    preparation = client.get("/api/live/preparation")
+    assert preparation.status_code == 200
+    assert preparation.json() == []
+
+    summary = client.get("/api/workspace/summary")
+    assert summary.status_code == 200
+    assert all(event.get("title") != "Role · Recruiter screen" for event in summary.json()["events"])
 
 
 def test_public_scheduler_wakeup_is_bounded(client: TestClient) -> None:

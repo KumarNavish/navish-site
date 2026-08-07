@@ -859,7 +859,12 @@ def install(legacy: Any) -> SimpleNamespace:
         output = []
         for row in rows:
             job = db.get(legacy.Job, row.job_id)
-            output.append({"id": row.id, "job_id": row.job_id, "role": job.title if job else "Role", "company": job.company if job else "Employer", "competency": row.competency, "prompt": row.prompt, "duration": row.duration, "due_at": _aware(row.due_at).isoformat(), "complete": row.complete})
+            if job is None:
+                # A preparation task without its role cannot guide a hiring decision.
+                # Keep the stale database row for auditability, but suppress it from
+                # the user-facing execution queue.
+                continue
+            output.append({"id": row.id, "job_id": row.job_id, "role": job.title, "company": job.company, "location": job.location, "competency": row.competency, "prompt": row.prompt, "duration": row.duration, "due_at": _aware(row.due_at).isoformat(), "complete": row.complete})
         return output
 
     @legacy.app.post("/api/live/preparation/{session_id}/complete")

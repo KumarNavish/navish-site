@@ -1,10 +1,10 @@
 "use strict";
 
 import {
-  $, $$, api, escapeHtml, formatDate, formatRelative, icon, loading,
+  $, $$, api, clearToast, escapeHtml, formatDate, formatRelative, icon, loading,
   errorState, state, statusTone, toast,
 } from "./ui.js";
-import { openRoleWorkspace } from "./workspace-detail.js";
+import { openRoleWorkspace } from "./workspace-detail.js?v=workspace5";
 
 const ROUTE_COPY = {
   today: ["Today", "Your next useful move"],
@@ -14,17 +14,57 @@ const ROUTE_COPY = {
   profile: ["Profile", "Evidence, constraints, and preferences"],
 };
 const TOP_LEVEL = new Set(Object.keys(ROUTE_COPY));
+const SECTION_COPY = {
+  overview: "Overview",
+  application: "Application",
+  preparation: "Preparation",
+};
 const workspace = { roles: [], applications: [], preparation: [], profile: null, today: [], summary: null, returnContext: null };
 let routeToken = 0;
 
 function text(value, fallback = "") { return value === null || value === undefined || value === "" ? fallback : String(value); }
 function number(value, fallback = 0) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
 function status(value) { const tone = statusTone(String(value)); return `<span class="status-text ${tone}">${escapeHtml(text(value, "Unconfirmed"))}</span>`; }
-function money(role) { return text(role?.compensation?.label || role?.compensation_label, "Compensation unresolved"); }
+function formatMoney(amount) { const numeric = Number(amount); return Number.isFinite(numeric) ? new Intl.NumberFormat("en-CH", { maximumFractionDigits: 0 }).format(numeric) : ""; }
+function compensationView(role) {
+  const compensation = role?.compensation || {};
+  const low = formatMoney(compensation.low);
+  const high = formatMoney(compensation.high);
+  const range = low && high ? `CHF ${low}–${high}` : text(compensation.label || role?.compensation_label, "Compensation unresolved");
+  const type = text(compensation.type, "").toLowerCase();
+  if (type.includes("published base")) return { label: `${range} base`, note: "Employer-published · high confidence" };
+  if (type.includes("published total")) return { label: `${range} total`, note: "Employer-published · base unconfirmed" };
+  if (type.includes("estimated base")) return { label: `${range} estimated base`, note: `${text(compensation.confidence, "low")} confidence` };
+  if (type.includes("published")) return { label: `${range} published`, note: "Base versus total unconfirmed" };
+  return { label: range, note: "Compensation evidence unresolved" };
+}
+function money(role) { return compensationView(role).label; }
 function roleFor(id) { return workspace.roles.find((item) => String(item.id) === String(id)); }
 function applicationFor(jobId) { return workspace.applications.find((item) => String(item.job_id) === String(jobId)); }
 function sessionsFor(jobId) { return workspace.preparation.filter((item) => String(item.job_id) === String(jobId)); }
-function roleLabel(role) { return role ? `${text(role.title)} — ${text(role.company)}` : "Role"; }
+function roleIdentity(jobId, session = null) {
+  const role = roleFor(jobId);
+  const application = applicationFor(jobId);
+  const title = text(role?.title || application?.title || session?.role).trim();
+  const company = text(role?.company || application?.company || session?.company).trim();
+  const location = text(role?.location || application?.location || session?.location).trim();
+  const meaningfulTitle = title && title.toLowerCase() !== "role" ? title : "";
+  const meaningfulCompany = company && company.toLowerCase() !== "employer" ? company : "";
+  return { role, application, title: meaningfulTitle, company: meaningfulCompany, location };
+}
+function roleLabel(role, application = null) {
+  const title = text(role?.title || application?.title, "Role");
+  const company = text(role?.company || application?.company);
+  return company ? `${title} — ${company}` : title;
+}
+function routeForSection(section = "overview") {
+  if (section === "preparation") return "interviews";
+  if (section === "application") return "applications";
+  return "opportunities";
+}
+function contextForRole(section = "overview") {
+  return workspace.returnContext || { route: routeForSection(section), scrollY: 0 };
+}
 
 function setChrome(route) {
   const [title, subtitle] = ROUTE_COPY[route] || ROUTE_COPY.today;
@@ -32,6 +72,19 @@ function setChrome(route) {
   $("#route-subtitle").textContent = subtitle;
   document.title = `${title} · Swiss Career Intelligence`;
   $$('[data-route]').forEach((node) => node.classList.toggle("active", node.dataset.route === route));
+  $("#sidebar")?.classList.remove("open");
+  if ($("#sidebar-scrim")) $("#sidebar-scrim").hidden = true;
+}
+
+function setRoleChrome(role, sectionName = "overview", originRoute = "opportunities") {
+  const title = text(role?.title, "Role workspace");
+  const company = text(role?.company, "Role");
+  const section = SECTION_COPY[sectionName] || "Overview";
+  const activeRoute = routeForSection(sectionName);
+  $("#route-title").textContent = section;
+  $("#route-subtitle").textContent = `${title} · ${company}`;
+  document.title = `${title} · ${section} · Swiss Career Intelligence`;
+  $$('[data-route]').forEach((node) => node.classList.toggle("active", node.dataset.route === activeRoute));
   $("#sidebar")?.classList.remove("open");
   if ($("#sidebar-scrim")) $("#sidebar-scrim").hidden = true;
 }
@@ -64,6 +117,7 @@ function parseLocation() {
 }
 
 async function navigate(target, { push = true, restoreScroll = null } = {}) {
+  clearToast();
   const token = ++routeToken;
   const view = $("#view");
   view.innerHTML = loading("Loading your workspace…");
@@ -71,12 +125,26 @@ async function navigate(target, { push = true, restoreScroll = null } = {}) {
     await refreshWorkspace();
     if (token !== routeToken) return;
     if (target.kind === "role") {
-      state.route = workspace.returnContext?.route || state.route || "opportunities";
-      setChrome(state.route);
-      window.SCIOS_DETAIL_CONTEXT = { originLabel: ROUTE_COPY[workspace.returnContext?.route || state.route]?.[0] || "Opportunities", roleId: target.id, section: target.section };
-      ensureDetailStaging();
-      await openRoleWorkspace(Number(target.id), { tab: target.section });
-      embedStagedDetail(target.id, target.section);
+      const context = contextForRole(target.section);
+      const role = roleFor(target.id);
+      state.route = context.route;
+      setRoleChrome(role, target.section, context.route);
+      const origin = ROUTE_COPY[context.route]?.[0] || "Opportunities";
+      view.innerHTML = `<article class="object-page"><button id="embedded-back" class="back-link" type="button">← ${escapeHtml(origin)}</button><div id="embedded-detail-content" data-role-id="${escapeHtml(String(target.id))}" data-section="${escapeHtml(target.section)}"></div></article>`;
+      $("#embedded-back")?.addEventListener("click", backFromRole);
+      document.body.classList.add("detail-page-open");
+      const mount = $("#embedded-detail-content");
+      await openRoleWorkspace(Number(target.id), {
+        tab: target.section,
+        mount,
+        afterChange: refreshWorkspace,
+        onSectionChange: (nextSection) => {
+          mount.dataset.section = nextSection;
+          history.replaceState({ scios: true }, "", `#role/${target.id}/${nextSection}`);
+          setRoleChrome(roleFor(target.id) || role, nextSection, routeForSection(nextSection));
+        },
+      });
+      window.scrollTo({ top: 0, behavior: "instant" });
     } else {
       state.route = target.route;
       setChrome(target.route);
@@ -105,63 +173,14 @@ function openRole(id, sectionName = "overview", push = true) {
 }
 
 function backFromRole() {
-  const context = workspace.returnContext || { route: "opportunities", scrollY: 0 };
+  const parsed = parseLocation();
+  const context = workspace.returnContext || { route: routeForSection(parsed.section), scrollY: 0 };
   workspace.returnContext = null;
   navigate({ kind: "route", route: context.route }, { push: false, restoreScroll: context.scrollY });
   history.replaceState({ scios: true }, "", `#${context.route}`);
 }
 window.SCIOS_BACK = backFromRole;
 window.SCIOS_NAVIGATE = (route, options = {}) => navigate({ kind: "route", route }, { push: options.push !== false, restoreScroll: options.restoreScroll ?? null });
-
-function ensureDetailStaging() {
-  const drawer = $("#detail-drawer");
-  if (!drawer) return;
-  if (!drawer.querySelector("#detail-content")) drawer.innerHTML = '<button id="detail-close" type="button" hidden aria-hidden="true">Close</button><div id="detail-content"></div>';
-  drawer.hidden = true;
-  $("#detail-backdrop")?.setAttribute("hidden", "");
-}
-
-function embedStagedDetail(id, sectionName) {
-  const drawer = $("#detail-drawer");
-  const staged = drawer?.querySelector("#detail-content");
-  const view = $("#view");
-  if (!staged || !view) return;
-  staged.id = "embedded-detail-content";
-  const context = workspace.returnContext || { route: "opportunities", scrollY: 0 };
-  const origin = ROUTE_COPY[context.route]?.[0] || "Opportunities";
-  view.innerHTML = `<article class="object-page"><button id="embedded-back" class="back-link" type="button">← ${escapeHtml(origin)}</button><div id="embedded-detail-slot"></div></article>`;
-  $("#embedded-detail-slot").replaceWith(staged);
-  ensureDetailStaging();
-  drawer.hidden = true;
-  $("#detail-backdrop")?.setAttribute("hidden", "");
-  document.body.classList.remove("drawer-open");
-  document.body.classList.add("detail-page-open");
-  $("#embedded-back")?.addEventListener("click", backFromRole);
-  enhanceRolePage(id, sectionName);
-  window.scrollTo({ top: 0, behavior: "instant" });
-}
-
-const detailObserver = new MutationObserver(() => {
-  const drawer = $("#detail-drawer");
-  const staged = drawer?.querySelector("#detail-content");
-  if (!drawer || drawer.hidden || !staged || !staged.childElementCount) return;
-  const parsed = parseLocation();
-  if (parsed.kind !== "role") return;
-  const activeSection = staged.querySelector(".detail-tab.active")?.dataset.detailTab || parsed.section;
-  history.replaceState({ scios: true }, "", `#role/${parsed.id}/${activeSection}`);
-  queueMicrotask(() => embedStagedDetail(parsed.id, activeSection));
-});
-
-function observeDetailStaging() {
-  const drawer = $("#detail-drawer");
-  if (drawer) detailObserver.observe(drawer, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", observeDetailStaging, { once: true });
-} else {
-  observeDetailStaging();
-}
 
 function actionDestination(action) {
   if (!action.job_id) return { label: "Review profile", handler: () => goRoute("profile") };
@@ -190,9 +209,10 @@ function renderToday() {
 }
 
 function roleRow(role) {
-  const best = role.strongest_matches?.[0];
   const recommendation = text(role.decision || role.judgment, "Investigate");
-  return `<article class="clean-row" data-open-role="${role.id}" tabindex="0" role="button" aria-label="Open ${escapeHtml(role.title)} at ${escapeHtml(role.company)}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(role.title)}</h2><p class="row-context">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p><p class="row-summary">${escapeHtml(text(role.why_interview, "Open the role to review the recommendation and evidence."))}</p><div class="row-meta"><span>${status(recommendation)}</span><span>${escapeHtml(text(best?.requirement, role.interview_band || "Evidence-led fit"))}</span></div></div><div class="row-side"><strong>${escapeHtml(money(role))}</strong><span>${escapeHtml(text(role.urgency, role.pipeline_state || "Review"))}</span></div></article>`;
+  const invitation = text(role.interview_band, "Unconfirmed");
+  const compensation = compensationView(role);
+  return `<article class="clean-row role-row" data-open-role="${role.id}" tabindex="0" role="button" aria-label="Open ${escapeHtml(role.title)} at ${escapeHtml(role.company)}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(role.title)}</h2><p class="row-context">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p><p class="row-summary"><strong>Why it may convert:</strong> ${escapeHtml(text(role.why_interview, "Open the role to review the recommendation and evidence."))}</p><p class="row-blocker"><strong>Largest blocker:</strong> ${escapeHtml(text(role.blocker, "No material blocker recorded."))}</p><div class="row-meta"><span>${status(recommendation)}</span><span>${status(`${invitation} invitation case`)}</span></div></div><div class="row-side"><strong>${escapeHtml(compensation.label)}</strong><span>${escapeHtml(compensation.note)}</span><span>${escapeHtml(text(role.urgency, role.pipeline_state || "Review"))}</span></div></article>`;
 }
 
 function renderOpportunities() {
@@ -208,7 +228,7 @@ function renderOpportunities() {
 
 function renderApplications() {
   const rows = workspace.applications.filter((app) => !["Rejected","Withdrawn","Closed"].includes(app.state));
-  const content = rows.length ? `<div class="clean-list">${rows.map((app) => { const role = roleFor(app.job_id); return `<article class="clean-row" data-open-application="${app.job_id}" tabindex="0" role="button"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(roleLabel(role))}</h2><p class="row-context">${status(app.state)}</p><p class="row-summary">${escapeHtml(text(app.next_action, "Review the role and set one explicit next action."))}</p><div class="row-meta"><span>${app.deadline ? `Due ${escapeHtml(formatDate(app.deadline,true))}` : "No deadline confirmed"}</span>${app.blocker ? `<span>${escapeHtml(app.blocker)}</span>` : ""}</div></div><div class="row-side"><strong>${escapeHtml(app.package_ready ? "Package ready" : "Preparation needed")}</strong><span>${escapeHtml(text(app.stage_age_days, "0"))} days in stage</span></div></article>`; }).join("")}</div>` : empty("No active application", "Pursuing a role creates a truthful, evidence-linked application workspace here.");
+  const content = rows.length ? `<div class="clean-list">${rows.map((app) => { const identity = roleIdentity(app.job_id); return `<article class="clean-row" data-open-application="${app.job_id}" tabindex="0" role="button" aria-label="Open application for ${escapeHtml(identity.title || app.title || "role")}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(identity.title || app.title || "Application")}</h2><p class="row-context">${escapeHtml(identity.company || app.company || "Employer unconfirmed")}${identity.location || app.location ? ` · ${escapeHtml(identity.location || app.location)}` : ""}</p><p class="row-summary">${escapeHtml(text(app.next_action, "Review the role and set one explicit next action."))}</p><div class="row-meta"><span>${status(app.state)}</span><span>${app.next_action_deadline ? `Due ${escapeHtml(formatDate(app.next_action_deadline,true))}` : "No deadline confirmed"}</span></div></div><div class="row-side"><strong>${escapeHtml(app.package_ready ? "Package ready" : "Preparation needed")}</strong><span>${escapeHtml(text(app.stage_age_days, "0"))} days in stage</span></div></article>`; }).join("")}</div>` : empty("No active application", "Pursuing a role creates a truthful, evidence-linked application workspace here.");
   $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Applications", "Each application stays attached to its role, evidence, deadlines, preparation, and history.")}${content}</div>`;
   bindCommon();
   $$('[data-open-application]').forEach((row) => row.onclick = () => openRole(row.dataset.openApplication, "application"));
@@ -217,7 +237,11 @@ function renderApplications() {
 function renderInterviews() {
   const pending = workspace.preparation.filter((item) => !item.complete);
   const grouped = new Map(); pending.forEach((item) => { const key = String(item.job_id); if (!grouped.has(key)) grouped.set(key, []); grouped.get(key).push(item); });
-  const content = grouped.size ? `<div class="clean-list">${[...grouped.entries()].map(([jobId, sessions]) => { const role = roleFor(jobId); const next = [...sessions].sort((a,b) => new Date(a.due_at || 0) - new Date(b.due_at || 0))[0]; return `<article class="clean-row" data-open-preparation="${jobId}" tabindex="0" role="button"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(roleLabel(role))}</h2><p class="row-context">${sessions.length} session${sessions.length === 1 ? "" : "s"} remaining</p><p class="row-summary">Next: ${escapeHtml(text(next?.competency || next?.prompt, "Role-specific preparation"))}</p></div><div class="row-side"><strong>${escapeHtml(text(next?.duration || next?.duration_minutes, "30"))} min</strong><span>${next?.due_at ? escapeHtml(formatRelative(next.due_at)) : "Plan available"}</span></div></article>`; }).join("")}</div>` : empty("No preparation is due", "Preparation appears here only when it belongs to an active opportunity or interview.");
+  const validGroups = [...grouped.entries()].map(([jobId, sessions]) => {
+    const next = [...sessions].sort((a,b) => new Date(a.due_at || 0) - new Date(b.due_at || 0))[0];
+    return { jobId, sessions, next, identity: roleIdentity(jobId, next) };
+  }).filter((group) => group.identity.title);
+  const content = validGroups.length ? `<div class="clean-list">${validGroups.map(({ jobId, sessions, next, identity }) => `<article class="clean-row preparation-row" data-open-preparation="${jobId}" tabindex="0" role="button" aria-label="Open preparation for ${escapeHtml(identity.title)}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(identity.title)}</h2><p class="row-context">${escapeHtml(identity.company || "Employer unconfirmed")}${identity.location ? ` · ${escapeHtml(identity.location)}` : ""}</p><p class="row-summary"><strong>Next:</strong> ${escapeHtml(text(next?.competency || next?.prompt, "Role-specific preparation"))}</p><div class="row-meta"><span>${sessions.length} session${sessions.length === 1 ? "" : "s"} remaining</span></div></div><div class="row-side"><strong>Start · ${escapeHtml(text(next?.duration || next?.duration_minutes, "30"))} min</strong><span>${next?.due_at ? escapeHtml(formatRelative(next.due_at)) : "Plan available"}</span></div></article>`).join("")}</div>` : empty("No preparation is due", "Preparation appears here only when it belongs to an active opportunity or interview.");
   $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Prepare", "Practice the specific reasoning, evidence, and communication required by an active role.")}${content}</div>`;
   bindCommon();
   $$('[data-open-preparation]').forEach((row) => row.onclick = () => openRole(row.dataset.openPreparation, "preparation"));
@@ -238,23 +262,6 @@ function bindCommon() {
   $$('[data-open-role]').forEach((node) => { const open = () => node.dataset.openRole && openRole(node.dataset.openRole, "overview"); node.onclick = open; node.onkeydown = (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }; });
 }
 
-function enhanceRolePage(id, sectionName) {
-  const role = roleFor(id); const application = applicationFor(id); const sessions = sessionsFor(id);
-  const root = $("#embedded-detail-content"); if (!root) return;
-  root.dataset.roleId = id; root.dataset.section = sectionName;
-  const title = root.querySelector("h1"); if (title && role && !title.textContent.includes(role.company)) title.textContent = `${role.title} — ${role.company}`;
-  const overview = document.createElement("section"); overview.className = "role-continuity-summary";
-  overview.innerHTML = `<div class="clean-list"><div class="clean-row"><div class="clean-row-main"><h3 class="row-title">Recommendation</h3><p class="row-summary">${escapeHtml(text(role?.decision || role?.judgment,"Investigate"))}. ${escapeHtml(text(role?.why_interview))}</p></div><div class="row-side"><strong>${escapeHtml(money(role))}</strong><span>${escapeHtml(text(role?.source_status,"Source status unconfirmed"))}</span></div></div><div class="clean-row"><div class="clean-row-main"><h3 class="row-title">Biggest blocker</h3><p class="row-summary">${escapeHtml(text(role?.blocker,"No material blocker recorded."))}</p></div></div><div class="clean-row"><div class="clean-row-main"><h3 class="row-title">Next action</h3><p class="row-summary">${escapeHtml(text(application?.next_action || role?.primary_strategy,"Review the evidence and choose one action."))}</p></div><div class="row-side"><strong>${escapeHtml(text(application?.state,"Not pursued"))}</strong><span>${sessions.filter((item)=>!item.complete).length} prep sessions open</span></div></div></div>`;
-  const hero = root.querySelector(".detail-hero,.workspace-hero,h1")?.closest(".detail-hero,.workspace-hero") || title;
-  if (hero?.parentNode) hero.parentNode.insertBefore(overview, hero.nextSibling); else root.prepend(overview);
-  root.addEventListener("click", (event) => {
-    const label = event.target.closest("button")?.textContent?.trim().toLowerCase() || "";
-    if (label.includes("application")) history.replaceState({ scios: true }, "", `#role/${id}/application`);
-    else if (label.includes("preparation") || label.includes("prepare")) history.replaceState({ scios: true }, "", `#role/${id}/preparation`);
-    else if (label.includes("overview")) history.replaceState({ scios: true }, "", `#role/${id}/overview`);
-  }, { capture: true });
-}
-
 function bindShell() {
   $$('[data-route]').forEach((node) => node.onclick = () => goRoute(node.dataset.route));
   $("#menu-toggle")?.addEventListener("click", () => { $("#sidebar").classList.add("open"); $("#sidebar-scrim").hidden = false; });
@@ -266,7 +273,7 @@ function bindShell() {
 async function start() {
   bindShell();
   const initial = parseLocation();
-  if (initial.kind === "role") workspace.returnContext = { route: "opportunities", scrollY: 0 };
+  if (initial.kind === "role") workspace.returnContext = { route: routeForSection(initial.section), scrollY: 0 };
   await navigate(initial, { push: false });
 }
 
