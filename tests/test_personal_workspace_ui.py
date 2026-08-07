@@ -42,9 +42,13 @@ def test_primary_navigation_is_reduced_to_hiring_flow() -> None:
 
 def test_authenticated_loader_reveals_the_application_shell() -> None:
     loader = (STATIC / "workspace-access.js").read_text()
+    queue = (STATIC / "workspace-request-queue.js").read_text()
     html = (STATIC / "index.html").read_text()
     assert 'function revealApplicationShell()' in loader
     assert 'if (app) app.hidden = false' in loader
     assert 'auth.hidden = true' in loader
     assert '/assets/personal-workspace.js?v=workspace2' in loader
-    assert '/assets/workspace-access.js?v=workspace2' in html
+    assert '/assets/workspace-request-queue.js?v=workspace3' in html
+    assert '/assets/workspace-access.js?v=workspace3' in html
+    assert '/api/workspace/applications' in queue
+    assert '/api/workspace/summary' in queue
