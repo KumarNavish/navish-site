@@ -1,0 +1,118 @@
+name: Apply workspace idempotency fix v2
+
+on:
+  push:
+    branches: [fix-authenticated-blank-page]
+    paths:
+      - '.github/workflows/apply-workspace-race-fix-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-authenticated-blank-page
+          fetch-depth: 0
+      - name: Make lazy workspace creation concurrency-safe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/workspace.py')
+          source = path.read_text()
+          source = source.replace('import json\n', 'import json\nimport time\n', 1)
+          source = source.replace(
+              'from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select\n',
+              'from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select\nfrom sqlalchemy.exc import IntegrityError\n',
+              1,
+          )
+
+          start = source.index('    def ensure_workspace(')
+          end = source.index('\n    def timeline(', start)
+          replacement = '''    def ensure_workspace(
+              db: Session, application: Any, job: Any
+          ) -> ApplicationWorkspace:
+              query = select(ApplicationWorkspace).where(
+                  ApplicationWorkspace.application_id == application.id
+              )
+              row = db.scalar(query)
+              created_here = False
+              lost_creation_race = False
+              if row is None:
+                  created_at = _aware(getattr(job, "created_at", None)) or _now()
+                  candidate = ApplicationWorkspace(
+                      application_id=application.id,
+                      user_id=application.user_id,
+                      priority=default_priority(job, application.state),
+                      stage_started_at=created_at,
+                      last_activity_at=created_at,
+                      applied_at=created_at
+                      if application.state
+                      in {"Applied", "Screening", "Interview", "Final stage", "Offer"}
+                      else None,
+                      next_action_deadline=default_deadline(application.state),
+                      updated_at=_now(),
+                  )
+                  try:
+                      # Applications and summary are loaded in parallel. Keep the
+                      # unique application_id constraint as the idempotency boundary
+                      # without invalidating the request session on a race.
+                      with db.begin_nested():
+                          db.add(candidate)
+                          db.flush()
+                      row = candidate
+                      created_here = True
+                  except IntegrityError as exc:
+                      lost_creation_race = True
+                      db.expire_all()
+                      for _ in range(10):
+                          row = db.scalar(query)
+                          if row is not None:
+                              break
+                          time.sleep(0.01)
+                      if row is None:
+                          raise exc
+
+              # Only the request that won creation initializes the timeline. A
+              # losing concurrent reader must not create duplicate events.
+              if created_here or not lost_creation_race:
+                  event_count = db.scalar(
+                      select(func.count())
+                      .select_from(ApplicationEvent)
+                      .where(ApplicationEvent.application_id == application.id)
+                  ) or 0
+                  if event_count == 0:
+                      add_event(
+                          db,
+                          application,
+                          "discovered",
+                          f"Role discovered and added as {application.state}.",
+                          _aware(getattr(job, "created_at", None)) or _now(),
+                      )
+                      if _load(application.package_json, {}):
+                          add_event(
+                              db,
+                              application,
+                              "package_prepared",
+                              "Evidence-grounded application package prepared internally; no submission occurred.",
+                          )
+              return row
+          '''
+          path.write_text(source[:start] + replacement + source[end:])
+          PY
+          python -m py_compile app/workspace.py
+      - name: Commit race fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/workspace.py
+          git commit -m 'Make application workspace creation idempotent under concurrent reads'
+          git push origin HEAD:fix-authenticated-blank-page
