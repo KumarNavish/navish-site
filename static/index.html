@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#080d17">
+  <meta name="theme-color" content="#06101c">
   <meta name="description" content="Private, evidence-bounded Swiss hiring intelligence for Navish Kumar.">
   <title>Swiss Career Intelligence OS</title>
   <link rel="manifest" href="/assets/manifest.webmanifest?v=live10">
-  <link rel="icon" href="/assets/icon.svg">
+  <link rel="icon" href="/assets/icon.svg?v=live10">
   <link rel="stylesheet" href="/assets/live.css?v=live9">
-  <link rel="stylesheet" href="/assets/live9-overrides.css?v=live9">
-  <link rel="stylesheet" href="/assets/live10-overrides.css?v=live10">
+  <link rel="stylesheet" href="/assets/ux-refinement.css?v=live10">
 </head>
 <body>
   <div id="auth" class="center"></div>
@@ -21,15 +20,15 @@
         <div><strong>Swiss Career</strong><span>Intelligence OS</span></div>
       </div>
       <nav class="sidebar-nav">
-        <button data-route="today" aria-label="Today"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5M9 21v-7h6v7"/></svg></span><span><strong>Today</strong><small>One clear next move</small></span></button>
-        <button data-route="opportunities" aria-label="Recommended roles"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span><span><strong>Roles</strong><small>High-conviction only</small></span></button>
-        <button data-route="applications" aria-label="Applications"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 12h20"/></svg></span><span><strong>Applications</strong><small>Packages and progress</small></span></button>
-        <button data-route="interviews" aria-label="Preparation"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><span><strong>Prepare</strong><small>Role-specific sessions</small></span></button>
-        <button data-route="network" aria-label="Network"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span><strong>Network</strong><small>Contacts and referrals</small></span></button>
+        <button data-route="today" aria-label="Today"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5M9 21v-7h6v7"/></svg></span><span><strong>Today</strong><small>Next best move</small></span></button>
+        <button data-route="opportunities" aria-label="Opportunities"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span><span><strong>Opportunities</strong><small>High-conviction roles</small></span></button>
+        <button data-route="applications" aria-label="Applications"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 12h20"/></svg></span><span><strong>Applications</strong><small>Active hiring pipeline</small></span></button>
+        <button data-route="interviews" aria-label="Interviews"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><span><strong>Interviews</strong><small>Role-specific preparation</small></span></button>
+        <button data-route="network" aria-label="Network"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span><strong>Network</strong><small>Verified access paths</small></span></button>
         <button data-route="assets" aria-label="Assets"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5h6l2 2h10v12H3z"/></svg></span><span><strong>Assets</strong><small>Résumé and evidence</small></span></button>
       </nav>
       <div class="sidebar-secondary">
-        <button data-route="profile" aria-label="Profile"><span class="profile-avatar small">NK</span><span><strong>Navish Kumar</strong><small>Profile and settings</small></span></button>
+        <button data-route="profile" aria-label="Profile"><span class="profile-avatar small">NK</span><span><strong>Navish Kumar</strong><small>Profile and constraints</small></span></button>
       </div>
     </aside>
     <div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
@@ -39,9 +38,9 @@
         <button id="menu-toggle" class="icon-button mobile-only" aria-label="Open navigation">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
-        <div class="route-heading"><strong id="route-title">Today</strong><span id="route-subtitle">One clear next move</span></div>
+        <div class="route-heading"><strong id="route-title">Today</strong><span id="route-subtitle">Next best move</span></div>
         <div class="topbar-actions">
-          <span class="privacy-chip"><span></span>Private workspace</span>
+          <span class="privacy-chip"><span></span>Private</span>
           <button class="user-chip" data-route="profile" aria-label="Profile"><span class="profile-avatar">NK</span><span class="user-chip-copy"><strong>Navish Kumar</strong><small>PhD candidate</small></span></button>
           <button id="logout" class="quiet" hidden>Sign out</button>
         </div>
@@ -50,12 +49,17 @@
     </div>
 
     <nav class="mobile-nav" aria-label="Mobile navigation">
-      <button data-route="today" aria-label="Today"><span>Today</span></button>
-      <button data-route="opportunities" aria-label="Roles"><span>Roles</span></button>
-      <button data-route="applications" aria-label="Applications"><span>Applications</span></button>
-      <button data-route="interviews" aria-label="Preparation"><span>Prepare</span></button>
-      <button data-route="profile" aria-label="Profile"><span>Profile</span></button>
+      <button data-route="today" aria-label="Today"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5M9 21v-7h6v7"/></svg><small>Today</small></span></button>
+      <button data-route="opportunities" aria-label="Roles"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><small>Roles</small></span></button>
+      <button data-route="applications" aria-label="Applications"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 12h20"/></svg><small>Apply</small></span></button>
+      <button data-route="interviews" aria-label="Interviews"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg><small>Prepare</small></span></button>
+      <button id="mobile-more" aria-label="More"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><small>More</small></span></button>
     </nav>
+    <div id="mobile-panel" class="mobile-panel" data-open="false">
+      <button data-route="network">Network</button>
+      <button data-route="assets">Assets</button>
+      <button data-route="profile">Profile</button>
+    </div>
   </div>
 
   <div id="detail-backdrop" class="detail-backdrop" hidden></div>
@@ -65,8 +69,8 @@
   </aside>
   <dialog id="dialog"><div id="dialog-body"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/assets/access.js?v=live9" defer></script>
-  <script src="/assets/backup.js?v=live9" defer></script>
-  <script src="/assets/frictionless.js?v=live10" defer></script>
+  <script src="/assets/access.js?v=live10" defer></script>
+  <script src="/assets/backup.js?v=live10" defer></script>
+  <script src="/assets/ux-refinement.js?v=live10" defer></script>
 </body>
 </html>
