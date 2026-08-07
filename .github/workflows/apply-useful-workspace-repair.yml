@@ -1,0 +1,52 @@
+name: Apply useful role workspace repair
+
+on:
+  push:
+    branches:
+      - fix/useful-role-workspace-v2
+    paths:
+      - '.repair/trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: useful-role-workspace-repair
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/useful-role-workspace-v2
+          fetch-depth: 0
+      - name: Apply the locally validated repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .repair/repair.patch.gz.b64.part-* | base64 --decode | gzip --decompress --stdout > /tmp/useful-role-workspace.patch
+          git apply --check /tmp/useful-role-workspace.patch
+          git apply /tmp/useful-role-workspace.patch
+          rm -rf .repair .repair-bootstrap
+          rm -f .github/workflows/apply-useful-workspace-repair.yml
+      - name: Verify repaired source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q app app.py tests
+          for file in static/*.js; do node --check "$file"; done
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          pytest -q
+      - name: Commit repaired workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence Repair'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'Rebuild role application and preparation workspace'
+          git push origin HEAD:fix/useful-role-workspace-v2
