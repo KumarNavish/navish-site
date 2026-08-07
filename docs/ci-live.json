@@ -1,17 +1,20 @@
 {
-  "tested_commit": "88de4eb5d98315f61255578725f2732094b1eec3",
+  "tested_commit": "6c2ac96488c9fd1c874c43633cc7d3095d359d18",
   "workflow": "Production validation",
-  "recorded_at_utc": "2026-08-06T13:50:17.099211+00:00",
+  "recorded_at_utc": "2026-08-07T10:56:27.002628+00:00",
   "result": "success",
   "python": "3.12.8",
+  "zero_cost_mode": {
+    "openai_enabled": false,
+    "paid_services_allowed": false,
+    "api_cost_chf": 0
+  },
   "checks": {
     "python_compile": [],
-    "node_live": [],
-    "node_access": [],
-    "node_service_worker": [],
+    "node_all_static_modules": [],
     "pytest": [
-      "............                                                             [100%]",
-      "12 passed in 2.34s"
+      "..................................                                       [100%]",
+      "34 passed in 6.59s"
     ]
   }
 }
