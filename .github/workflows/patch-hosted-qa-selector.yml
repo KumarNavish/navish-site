@@ -42,3 +42,5 @@ jobs:
           git add -A .github/workflows/hosted-authenticated-browser.yml .github/workflows/patch-hosted-qa-selector.yml
           git commit -m 'Use visible preparation control in hosted browser acceptance'
           git push origin HEAD:main
+
+# Existing workflow retrigger marker: 2026-08-07
