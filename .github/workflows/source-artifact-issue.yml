@@ -84,8 +84,11 @@ jobs:
           echo '1c0d3b0037889b88af1e70d9f5c991d3499722fe33dae28311c002547290ecd2  /tmp/useful-role-workspace.patch' | sha256sum --check
           git apply --check /tmp/useful-role-workspace.patch
           git apply /tmp/useful-role-workspace.patch
+          # The repository integration can update workflow files directly, but
+          # the issue-run token cannot. Keep the branch commit limited to product
+          # and test code; workflow changes are applied separately after merge.
+          git checkout HEAD -- .github/workflows
           rm -rf .repair .repair-bootstrap
-          rm -f .github/workflows/apply-useful-workspace-repair.yml
       - name: Verify repaired source
         shell: bash
         run: |
@@ -95,6 +98,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           pytest -q
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          find . -type f -name '*.pyc' -delete
       - name: Commit repaired workspace
         shell: bash
         run: |
