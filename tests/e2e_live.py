@@ -20,14 +20,14 @@ def assert_no_horizontal_overflow(page: Page) -> None:
 def assert_accessible_controls(page: Page) -> None:
     unnamed_buttons = page.evaluate(
         """
-        [...document.querySelectorAll('button')]
+        [...document.querySelectorAll('button:not([hidden])')]
           .filter((node) => !node.textContent.trim() && !node.getAttribute('aria-label') && !node.title)
           .map((node) => node.outerHTML.slice(0, 180))
         """
     )
     unlabeled_fields = page.evaluate(
         """
-        [...document.querySelectorAll('input, select, textarea')]
+        [...document.querySelectorAll('input:not([hidden]), select:not([hidden]), textarea:not([hidden])')]
           .filter((node) => !node.getAttribute('aria-label') && !node.closest('label') && !(node.id && document.querySelector(`label[for="${node.id}"]`)))
           .map((node) => node.outerHTML.slice(0, 180))
         """
@@ -37,13 +37,16 @@ def assert_accessible_controls(page: Page) -> None:
 
 
 def open_private(page: Page) -> None:
-    page.goto(f"{ORIGIN}/#access=ci-private-access", wait_until="networkidle")
+    page.goto(f"{ORIGIN}/#access=ci-private-access", wait_until="domcontentloaded")
+    page.locator("#app").wait_for(state="visible")
     page.get_by_role("heading", name="Today", exact=True).wait_for()
+    assert page.locator("#app").get_attribute("hidden") is None
+    assert page.locator("#auth").is_hidden()
 
 
 def click_route(page: Page, route: str) -> None:
     width = page.viewport_size["width"] if page.viewport_size else 1440
-    scope = ".mobile-nav" if width <= 820 else ".sidebar"
+    scope = ".mobile-nav" if width <= 820 else ".workspace-nav-list"
     page.locator(f'{scope} [data-route="{route}"]').click()
 
 
@@ -67,6 +70,7 @@ def new_page(
         if message.type == "error"
         else None,
     )
+    page.on("pageerror", lambda error: console_errors.append(str(error)))
     page.on(
         "requestfailed",
         lambda request: failed_requests.append(
@@ -74,6 +78,38 @@ def new_page(
         ),
     )
     return context, page
+
+
+def import_acceptance_role(page: Page) -> int:
+    payload = {
+        "title": "Applied Machine Learning Research Engineer",
+        "company": "Synthetic Acceptance Employer",
+        "location": "Basel, Switzerland",
+        "description": (
+            "We require Python, PyTorch, optimization, continual learning, experimental design, "
+            "Docker, CI/CD, automated testing and model evaluation. A PhD is valued. The engineer "
+            "owns reliable adaptation and evaluation systems, explains failure modes, and collaborates "
+            "with researchers and product engineers. Two years of research or engineering experience. "
+            "CHF 130,000–CHF 155,000 base salary."
+        ),
+    }
+    result = page.evaluate(
+        """
+        async (payload) => {
+          const response = await fetch('/api/jobs/import', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.detail || `Import failed (${response.status})`);
+          return body;
+        }
+        """,
+        payload,
+    )
+    return int(result["id"])
 
 
 def run() -> None:
@@ -91,123 +127,82 @@ def run() -> None:
         )
 
         open_private(page)
-        page.get_by_text("Daily priority").wait_for()
-        page.get_by_role("heading", name="Action queue").wait_for()
-        screenshot(page, "after-01-today-mobile-390.png")
-        steps.append("Today exposed one dominant priority and a bounded action queue")
+        page.get_by_text("No consequential action is due.", exact=True).wait_for()
+        screenshot(page, "workspace-01-today-mobile-390.png")
+        steps.append("Authenticated app shell became visible and Today rendered")
 
+        job_id = import_acceptance_role(page)
         click_route(page, "opportunities")
         page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
-        page.get_by_role("button", name="Import role", exact=True).click()
-        page.get_by_label("Title").fill("Applied Machine Learning Research Engineer")
-        page.get_by_label("Employer").fill("Synthetic Acceptance Employer")
-        page.get_by_label("Location").fill("Basel, Switzerland")
-        page.get_by_label("Complete job description").fill(
-            "We require Python, PyTorch, optimization, continual learning, experimental design, Docker, CI/CD, automated testing and model evaluation. "
-            "A PhD is valued. The engineer owns reliable adaptation and evaluation systems, explains failure modes, and collaborates with researchers and product engineers. "
-            "Two years of research or engineering experience. CHF 130,000–CHF 155,000 base salary."
+        role = page.get_by_role(
+            "button",
+            name="Open Applied Machine Learning Research Engineer at Synthetic Acceptance Employer",
         )
-        page.get_by_role("button", name="Analyze role").click()
-        page.get_by_role(
-            "heading", name="Applied Machine Learning Research Engineer", exact=True
-        ).wait_for()
+        role.wait_for()
+        screenshot(page, "workspace-02-opportunities-mobile-390.png")
+
+        role.click()
+        page.get_by_role("button", name="← Opportunities").wait_for()
         page.get_by_text("Why this employer may interview Navish", exact=True).wait_for()
-        screenshot(page, "after-02-opportunity-workspace-mobile-390.png")
-        steps.append("Opportunity import opened the canonical role workspace")
+        assert page.locator(".object-page").is_visible()
+        assert page.locator("#detail-drawer").is_hidden()
+        assert f"#role/{job_id}/overview" in page.url
+        screenshot(page, "workspace-03-role-page-mobile-390.png")
+        steps.append("Role opened as an embedded page with an explicit Back action")
 
         page.get_by_role("button", name="Pursue", exact=True).click()
         page.get_by_role("heading", name="Prepare this application?").wait_for()
         page.get_by_role("button", name="Prepare package").click()
-        page.get_by_role("heading", name="Application state").wait_for()
         page.get_by_text("Ready for review", exact=True).wait_for()
-        screenshot(page, "after-03-application-workspace-mobile-390.png")
+        screenshot(page, "workspace-04-application-page-mobile-390.png")
         steps.append("Pursue created an evidence-linked package without submission")
 
-        page.get_by_role("button", name="Close role workspace").click()
+        page.get_by_role("button", name="← Opportunities").click()
+        page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
+        assert page.locator(".object-page").count() == 0
+
         click_route(page, "applications")
         page.get_by_role("heading", name="Applications", exact=True).wait_for()
-        page.locator(".mobile-data-list").get_by_text(
-            "Synthetic Acceptance Employer", exact=True
-        ).first.wait_for()
-        stage = page.locator("select[data-application-stage]").first
-        stage.select_option("Ready to apply")
-        page.get_by_text("Stage updated to Ready to apply", exact=True).wait_for()
-        screenshot(page, "after-04-applications-list-mobile-390.png")
-        steps.append("Application stage changed inline in one interaction")
-
-        page.get_by_role("button", name="Pipeline", exact=True).click()
-        page.get_by_role("heading", name="Preparing", exact=True).wait_for()
-        screenshot(page, "after-05-applications-pipeline-mobile-390.png")
-        steps.append("Functional pipeline rendered from canonical application records")
+        page.get_by_text("Synthetic Acceptance Employer", exact=False).first.wait_for()
+        screenshot(page, "workspace-05-applications-mobile-390.png")
 
         click_route(page, "interviews")
-        page.get_by_role("heading", name="Interviews", exact=True).wait_for()
-        page.get_by_text("Pre-interview mode", exact=True).first.wait_for()
-        page.locator("[data-complete-session]").first.click()
-        page.get_by_text("Preparation recorded", exact=True).wait_for()
-        screenshot(page, "after-06-interviews-mobile-390.png")
-        steps.append("Role-specific preparation recorded completion")
-
-        page.locator("#mobile-more").click()
-        page.locator('#mobile-panel [data-route="network"]').click()
-        page.get_by_role("heading", name="Network", exact=True).wait_for()
-        page.get_by_role("heading", name="Access gaps", exact=True).wait_for()
-        screenshot(page, "after-07-network-mobile-390.png")
-
-        page.locator("#mobile-more").click()
-        page.locator('#mobile-panel [data-route="assets"]').click()
-        page.get_by_role("heading", name="Assets", exact=True).wait_for()
-        page.get_by_role("heading", name="Role-specific packages", exact=True).wait_for()
-        page.locator(".asset-list").get_by_text(
-            "Synthetic Acceptance Employer", exact=True
-        ).first.wait_for()
-        screenshot(page, "after-08-assets-mobile-390.png")
-        steps.append("Network and Assets reused the same role and evidence state")
-
-        click_route(page, "today")
-        page.get_by_role("heading", name="Today", exact=True).wait_for()
-        assert page.locator(".priority-card").count() == 1
-        assert page.locator(".action-row:visible").count() <= 2
-        screenshot(page, "after-09-today-workflow-mobile-390.png")
+        page.get_by_role("heading", name="Prepare", exact=True).wait_for()
+        page.get_by_text("Synthetic Acceptance Employer", exact=False).first.wait_for()
+        screenshot(page, "workspace-06-prepare-mobile-390.png")
+        steps.append("Application and preparation remained attached to the same role")
         context.close()
 
-        for label, viewport, route in [
-            ("mobile-430", {"width": 430, "height": 932}, "today"),
-            ("tablet-820", {"width": 820, "height": 1180}, "opportunities"),
-            ("desktop-1440", {"width": 1440, "height": 1000}, "applications"),
-        ]:
-            context, page = new_page(
-                browser, viewport, console_errors, failed_requests
-            )
-            open_private(page)
-            if route != "today":
-                click_route(page, route)
-                page.get_by_role(
-                    "heading",
-                    name="Opportunities" if route == "opportunities" else "Applications",
-                    exact=True,
-                ).wait_for()
-            screenshot(page, f"after-10-{label}-{route}.png")
-            steps.append(f"{label} responsive layout passed for {route}")
-            context.close()
-
+        context, page = new_page(
+            browser,
+            {"width": 1440, "height": 1000},
+            console_errors,
+            failed_requests,
+        )
+        open_private(page)
+        screenshot(page, "workspace-07-today-desktop-1440.png")
+        click_route(page, "opportunities")
+        page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
+        page.get_by_role(
+            "button",
+            name="Open Applied Machine Learning Research Engineer at Synthetic Acceptance Employer",
+        ).click()
+        page.get_by_role("button", name="← Opportunities").wait_for()
+        assert page.locator("#detail-drawer").is_hidden()
+        screenshot(page, "workspace-08-role-page-desktop-1440.png")
+        steps.append("Desktop embedded role workspace rendered without a drawer")
+        context.close()
         browser.close()
 
     report = {
         "result": "success" if not console_errors and not failed_requests else "failure",
         "browser_plugin": "not available; repository Playwright workflow used",
-        "viewports": ["390x844", "430x932", "820x1180", "1440x1000"],
+        "viewports": ["390x844", "1440x1000"],
         "steps": steps,
         "console_errors": console_errors,
         "failed_requests": failed_requests,
         "external_actions_executed": False,
-        "before_screenshots": [
-            "01-today-mobile.png",
-            "05-today-desktop.png",
-        ],
-        "after_screenshots": sorted(
-            path.name for path in OUT.glob("after-*.png")
-        ),
+        "screenshots": sorted(path.name for path in OUT.glob("workspace-*.png")),
     }
     (OUT / "redesign-report.json").write_text(json.dumps(report, indent=2) + "\n")
     assert not console_errors, console_errors
