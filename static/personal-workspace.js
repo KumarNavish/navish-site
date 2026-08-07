@@ -4,7 +4,7 @@ import {
   $, $$, api, clearToast, escapeHtml, formatDate, formatRelative, icon, loading,
   errorState, state, statusTone, toast,
 } from "./ui.js";
-import { openRoleWorkspace } from "./workspace-detail.js?v=focus10";
+import { openRoleWorkspace } from "./workspace-detail.js?v=focus11";
 
 const ROUTE_COPY = {
   today: ["Today", "Your next move"],

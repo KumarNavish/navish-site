@@ -8,7 +8,7 @@ def test_white_workspace_is_primary_surface() -> None:
     html = (STATIC / "index.html").read_text()
     css = (STATIC / "workspace-white.css").read_text()
     assert 'theme-color" content="#ffffff"' in html
-    assert '/assets/workspace-white.css?v=focus10' in html
+    assert '/assets/workspace-white.css?v=focus11' in html
     assert '/assets/frictionless.js' not in html
     assert 'class="detail-staging"' not in html
     assert 'class="detail-drawer"' not in html
@@ -42,7 +42,7 @@ def test_role_workspace_is_directly_embedded_and_has_spatial_navigation() -> Non
     assert '#role/${target.id}/${target.section}' in app
     assert 'workspace.returnContext' in app
     assert 'restoreScroll' in app
-    assert './workspace-detail.js?v=focus10' in app
+    assert './workspace-detail.js?v=focus11' in app
 
     # Role identity is the page heading; application and preparation remain
     # attached to the same role workspace.
@@ -98,9 +98,9 @@ def test_authenticated_loader_reveals_and_cache_busts_the_application_shell() ->
     assert 'function revealApplicationShell()' in loader
     assert 'if (app) app.hidden = false' in loader
     assert 'auth.hidden = true' in loader
-    assert '/assets/personal-workspace.js?v=focus10' in loader
+    assert '/assets/personal-workspace.js?v=focus11' in loader
     assert '/assets/workspace-request-queue.js?v=workspace4' in html
-    assert '/assets/workspace-access.js?v=focus10' in html
+    assert '/assets/workspace-access.js?v=focus11' in html
     assert '/api/workspace/applications' in queue
     assert '/api/workspace/summary' in queue
 
@@ -135,3 +135,5 @@ def test_hiring_focus_keeps_one_primary_decision_per_role() -> None:
     assert ".role-decision-flow" in css
     assert ".application-next" in css
     assert ".practice-focus" in css
+    assert "#embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:minmax(0,1fr)!important}" in css
+    assert "#embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:36px minmax(0,1fr)!important}" not in css

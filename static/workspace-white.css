@@ -177,7 +177,7 @@ dialog{width:min(520px,calc(100% - 32px));padding:0;border:1px solid var(--line)
 @media(max-width:640px){
   #embedded-detail-content .detail-tabs{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:0!important;overflow:visible!important;margin-inline:-18px!important;padding:0 18px!important}
   #embedded-detail-content .detail-tabs button{min-height:46px!important;padding:12px 6px!important;text-align:center!important}
-  #embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:36px minmax(0,1fr)!important}
+  #embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:minmax(0,1fr)!important}
   #embedded-detail-content .detail-header.compact .detail-header-action{grid-column:1/-1!important}
   #embedded-detail-content .next-action-summary{grid-template-columns:1fr!important;gap:12px!important}
 }
