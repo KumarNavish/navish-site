@@ -38,3 +38,13 @@ def test_primary_navigation_is_reduced_to_hiring_flow() -> None:
     assert 'data-route="assets"' not in primary
     mobile = html.split('<nav class="mobile-nav"', 1)[1].split('</nav>', 1)[0]
     assert mobile.count('data-route=') == 5
+
+
+def test_authenticated_loader_reveals_the_application_shell() -> None:
+    loader = (STATIC / "workspace-access.js").read_text()
+    html = (STATIC / "index.html").read_text()
+    assert 'function revealApplicationShell()' in loader
+    assert 'if (app) app.hidden = false' in loader
+    assert 'auth.hidden = true' in loader
+    assert '/assets/personal-workspace.js?v=workspace2' in loader
+    assert '/assets/workspace-access.js?v=workspace2' in html
