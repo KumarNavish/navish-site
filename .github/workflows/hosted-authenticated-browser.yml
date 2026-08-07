@@ -144,7 +144,10 @@ jobs:
               role.click()
               page.locator('.object-page').wait_for(timeout=60000)
               page.locator('#embedded-back').wait_for(timeout=60000)
+              page.locator('.detail-header h1').wait_for(timeout=60000)
               assert page.locator('#detail-drawer').is_hidden()
+              assert page.locator('.detail-footer').count() == 0
+              assert page.locator('.role-continuity-summary').count() == 0
               assert '#role/' in page.url
               back_label = page.locator('#embedded-back').inner_text()
               page.screenshot(path=str(out / f'{name}-02-role.png'), full_page=False)
@@ -154,7 +157,7 @@ jobs:
               page.get_by_role('button', name='Apply' if width < 700 else 'Applications', exact=True).click()
               page.get_by_role('heading', name='Applications', exact=True).wait_for(timeout=60000)
               page.screenshot(path=str(out / f'{name}-03-applications.png'), full_page=False)
-              page.get_by_role('button', name='Prepare', exact=True).click()
+              page.locator('[data-route="interviews"]:visible').first.click()
               page.get_by_role('heading', name='Prepare', exact=True).wait_for(timeout=60000)
               page.reload(wait_until='networkidle', timeout=180000)
               page.locator('#app:not([hidden])').wait_for(timeout=60000)
