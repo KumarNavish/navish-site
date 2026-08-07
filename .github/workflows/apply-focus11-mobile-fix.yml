@@ -1,0 +1,90 @@
+name: Apply focus11 mobile role-header repair
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: apply-focus11-mobile-role-header
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event.issue.user.login == 'KumarNavish' && contains(github.event.issue.title, '[APPLY FOCUS11 MOBILE FIX]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-role-header-focus11
+          fetch-depth: 0
+
+      - name: Repair compact mobile role header and cache-bust assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          css = Path('static/workspace-white.css')
+          source = css.read_text()
+          broken = '#embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:36px minmax(0,1fr)!important}'
+          repaired = '#embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:minmax(0,1fr)!important}'
+          if broken not in source:
+              raise SystemExit('expected broken compact-header rule was not found')
+          css.write_text(source.replace(broken, repaired, 1))
+
+          for name in ('static/index.html', 'static/workspace-access.js', 'static/personal-workspace.js'):
+              path = Path(name)
+              text = path.read_text()
+              if 'focus10' not in text:
+                  raise SystemExit(f'focus10 cache marker missing in {name}')
+              path.write_text(text.replace('focus10', 'focus11'))
+
+          test = Path('tests/test_personal_workspace_ui.py')
+          text = test.read_text().replace('focus10', 'focus11')
+          anchor = '    assert ".practice-focus" in css\n'
+          if anchor not in text:
+              raise SystemExit('UI contract-test anchor missing')
+          text = text.replace(
+              anchor,
+              anchor
+              + '    assert "#embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:minmax(0,1fr)!important}" in css\n'
+              + '    assert "#embedded-detail-content .detail-header.compact .detail-title-row{grid-template-columns:36px minmax(0,1fr)!important}" not in css\n',
+              1,
+          )
+          test.write_text(text)
+          PY
+
+      - name: Verify repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q app app.py tests
+          for file in static/*.js; do node --check "$file"; done
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          pytest -q
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          rm -rf .pytest_cache
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence UX'
+          git config user.email 'actions@users.noreply.github.com'
+          git add static/index.html static/personal-workspace.js static/workspace-access.js static/workspace-white.css tests/test_personal_workspace_ui.py
+          git commit -m 'Fix compact mobile role header'
+          git push origin HEAD:fix/mobile-role-header-focus11
+
+      - name: Publish result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Focus11 mobile role-header repair result: ${{ job.status }}. Workflow run ID: ${{ github.run_id }}."
