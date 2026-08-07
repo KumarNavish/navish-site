@@ -40,39 +40,46 @@ jobs:
         run: |
           gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Source artifact ready. Workflow run ID: ${{ github.run_id }}"
 
-  patch-hosted-qa-selector:
-    if: contains(github.event.issue.title, '[PATCH HOSTED QA SELECTOR]')
+  apply-useful-workspace-repair:
+    if: github.event.issue.user.login == 'KumarNavish' && contains(github.event.issue.title, '[APPLY USEFUL WORKSPACE REPAIR]')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: fix/useful-role-workspace-v2
           fetch-depth: 0
-      - name: Patch the visible preparation control selector
+      - name: Apply the locally validated repair
+        id: apply
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('.github/workflows/hosted-authenticated-browser.yml')
-          source = path.read_text()
-          old = "page.get_by_role('button', name='Prepare', exact=True).click()"
-          new = "page.locator('[data-route=\"interviews\"]:visible').first.click()"
-          if old not in source:
-              raise SystemExit('expected Prepare selector not found')
-          path.write_text(source.replace(old, new, 1))
-          Path('.github/workflows/patch-hosted-qa-selector.yml').unlink(missing_ok=True)
-          PY
-      - name: Commit selector repair
+          cat .repair/repair.patch.gz.b64.part-* | base64 --decode | gzip --decompress --stdout > /tmp/useful-role-workspace.patch
+          git apply --check /tmp/useful-role-workspace.patch
+          git apply /tmp/useful-role-workspace.patch
+          rm -rf .repair .repair-bootstrap
+          rm -f .github/workflows/apply-useful-workspace-repair.yml
+      - name: Verify repaired source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q app app.py tests
+          for file in static/*.js; do node --check "$file"; done
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          pytest -q
+      - name: Commit repaired workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence Repair'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'Rebuild role application and preparation workspace'
+          git push origin HEAD:fix/useful-role-workspace-v2
+      - name: Publish repair result
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
-          set -euo pipefail
-          git config user.name 'Swiss Career Intelligence QA'
-          git config user.email 'actions@users.noreply.github.com'
-          git add -A .github/workflows/hosted-authenticated-browser.yml .github/workflows/patch-hosted-qa-selector.yml
-          git commit -m 'Use visible preparation control in hosted browser acceptance'
-          git push origin HEAD:main
-          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Hosted browser acceptance selector repaired on main."
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Useful role workspace repair workflow completed with result: ${{ job.status }}. Workflow run ID: ${{ github.run_id }}"
