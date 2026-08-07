@@ -1,0 +1,276 @@
+name: Hosted authenticated browser acceptance
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: hosted-authenticated-browser-acceptance
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event.issue.user.login == 'KumarNavish' && contains(github.event.issue.title, '[LIVE AUTH VERIFY]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ORIGIN: https://swiss-career-intelligence-os.onrender.com
+      SERVICE_ID: srv-d9q541egekts73cgk2a0
+      RENDER_API_KEY_PRIMARY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_API_KEY_ALT: ${{ secrets.RENDER_API_TOKEN }}
+      RENDER_API_KEY_LEGACY: ${{ secrets.RENDER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: pip
+      - name: Install Playwright Chromium
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright==1.54.0
+          python -m playwright install --with-deps chromium
+
+      - name: Enable a sealed one-time production QA session
+        id: enable
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          api_key="${RENDER_API_KEY_PRIMARY:-${RENDER_API_KEY_ALT:-${RENDER_API_KEY_LEGACY:-}}}"
+          test -n "$api_key"
+          token=$(python - <<'PY'
+          import secrets
+          print(secrets.token_urlsafe(48))
+          PY
+          )
+          echo "::add-mask::$token"
+          printf '%s' "$token" > /tmp/hosted-qa-token
+
+          get_env() {
+            local key="$1" out="$2"
+            code=$(curl --silent --show-error --max-time 60 -o "$out" -w '%{http_code}' \
+              -H 'Accept: application/json' -H "Authorization: Bearer ${api_key}" \
+              "https://api.render.com/v1/services/${SERVICE_ID}/env-vars/${key}" || true)
+            if [ "$code" != '200' ]; then printf '%s' '{"value":""}' > "$out"; fi
+          }
+          get_env SCIOS_TEST_MODE /tmp/previous-test-mode.json
+          get_env SCIOS_TEST_ACCESS_TOKENS /tmp/previous-test-tokens.json
+
+          put_env() {
+            local key="$1" value="$2"
+            VALUE="$value" python - <<'PY' > /tmp/render-env.json
+          import json, os
+          print(json.dumps({'value': os.environ['VALUE']}))
+          PY
+            code=$(curl --silent --show-error --max-time 60 -o /tmp/render-env-response.json -w '%{http_code}' \
+              -X PUT -H 'Accept: application/json' -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer ${api_key}" --data-binary @/tmp/render-env.json \
+              "https://api.render.com/v1/services/${SERVICE_ID}/env-vars/${key}")
+            test "$code" = '200'
+          }
+          put_env SCIOS_TEST_MODE true
+          put_env SCIOS_TEST_ACCESS_TOKENS "$token"
+
+          deploy_code=$(curl --silent --show-error --max-time 60 -o /tmp/render-deploy.json -w '%{http_code}' \
+            -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer ${api_key}" --data '{}' \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploy")
+          test "$deploy_code" = '201' -o "$deploy_code" = '202'
+          python - <<'PY' > /tmp/qa-deploy-id
+          import json
+          print(json.load(open('/tmp/render-deploy.json')).get('id', ''))
+          PY
+
+          for attempt in $(seq 1 60); do
+            sleep 5
+            ready=$(curl --silent --show-error --max-time 45 -o /tmp/ready.json -w '%{http_code}' "$ORIGIN/readyz" || true)
+            if [ "$ready" = '200' ]; then
+              access=$(curl --silent --show-error --max-time 45 -o /tmp/access.json -w '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' \
+                --data "$(TOKEN="$token" python - <<'PY'
+          import json, os
+          print(json.dumps({'token': os.environ['TOKEN']}))
+          PY
+          )" "$ORIGIN/api/auth/access" || true)
+              if [ "$access" = '200' ]; then break; fi
+            fi
+          done
+          test "${ready:-000}" = '200'
+          test "${access:-000}" = '200'
+          rm -f /tmp/render-env.json /tmp/render-env-response.json /tmp/access.json
+
+      - name: Exercise the actual authenticated HTTPS product
+        id: browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/hosted-auth-qa
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+
+          origin = os.environ['ORIGIN']
+          token = Path('/tmp/hosted-qa-token').read_text()
+          out = Path('/tmp/hosted-auth-qa')
+          console = []
+          page_errors = []
+          failed_requests = []
+          bad_responses = []
+          screenshots = []
+          checks = {}
+
+          def test_viewport(browser, name, width, height):
+              context = browser.new_context(viewport={'width': width, 'height': height})
+              page = context.new_page()
+              page.on('console', lambda msg: console.append({'type': msg.type, 'text': msg.text}) if msg.type in {'error', 'warning'} else None)
+              page.on('pageerror', lambda exc: page_errors.append(str(exc)))
+              page.on('requestfailed', lambda req: failed_requests.append({'url': req.url, 'failure': req.failure}))
+              page.on('response', lambda response: bad_responses.append({'url': response.url, 'status': response.status}) if response.status >= 400 else None)
+
+              page.goto(f'{origin}/#access={token}', wait_until='networkidle', timeout=180000)
+              page.locator('#app:not([hidden])').wait_for(timeout=60000)
+              page.get_by_role('heading', name='Today', exact=True).wait_for(timeout=60000)
+              checks[f'{name}_title'] = page.title()
+              checks[f'{name}_url'] = page.url
+              checks[f'{name}_app_visible'] = page.locator('#app').is_visible()
+              checks[f'{name}_auth_hidden'] = page.locator('#auth').is_hidden()
+              checks[f'{name}_body_length'] = len(page.locator('body').inner_text().strip())
+              overflow = page.evaluate('Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth')
+              checks[f'{name}_horizontal_overflow_px'] = overflow
+              assert overflow <= 1
+
+              today_path = out / f'{name}-01-today.png'
+              page.screenshot(path=str(today_path), full_page=False)
+              screenshots.append(today_path.name)
+
+              if width < 700:
+                  page.get_by_role('button', name='Roles', exact=True).click()
+              else:
+                  page.get_by_role('button', name='Opportunities', exact=True).click()
+              page.get_by_role('heading', name='Opportunities', exact=True).wait_for(timeout=60000)
+              role = page.locator('[data-open-role]:visible').first
+              role.wait_for(timeout=60000)
+              role.click()
+              page.locator('.object-page').wait_for(timeout=60000)
+              page.locator('#embedded-back').wait_for(timeout=60000)
+              assert page.locator('#detail-drawer').is_hidden()
+              checks[f'{name}_embedded_role_page'] = True
+              checks[f'{name}_back_label'] = page.locator('#embedded-back').inner_text()
+
+              role_path = out / f'{name}-02-role.png'
+              page.screenshot(path=str(role_path), full_page=False)
+              screenshots.append(role_path.name)
+
+              page.locator('#embedded-back').click()
+              page.get_by_role('heading', name='Opportunities', exact=True).wait_for(timeout=60000)
+              page.reload(wait_until='networkidle', timeout=180000)
+              page.locator('#app:not([hidden])').wait_for(timeout=60000)
+              checks[f'{name}_session_persisted_after_reload'] = True
+
+              context.close()
+
+          with sync_playwright() as playwright:
+              browser = playwright.chromium.launch(headless=True)
+              test_viewport(browser, 'desktop-1440', 1440, 1000)
+              test_viewport(browser, 'mobile-390', 390, 844)
+              browser.close()
+
+          relevant_console = [item for item in console if 'favicon' not in item['text'].lower()]
+          relevant_bad = [item for item in bad_responses if not item['url'].endswith('/favicon.ico')]
+          report = {
+              'origin': origin,
+              'checks': checks,
+              'console_warnings_or_errors': relevant_console,
+              'page_errors': page_errors,
+              'failed_requests': failed_requests,
+              'http_errors': relevant_bad,
+              'screenshots': screenshots,
+          }
+          (out / 'hosted-authenticated-browser-report.json').write_text(json.dumps(report, indent=2) + '\n')
+          assert not page_errors, page_errors
+          assert not failed_requests, failed_requests
+          assert not relevant_console, relevant_console
+          assert not relevant_bad, relevant_bad
+          PY
+
+      - name: Revoke QA session and restore production environment
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          api_key="${RENDER_API_KEY_PRIMARY:-${RENDER_API_KEY_ALT:-${RENDER_API_KEY_LEGACY:-}}}"
+          if [ -z "$api_key" ]; then exit 1; fi
+          previous_value() {
+            python - "$1" <<'PY'
+          import json, sys
+          try:
+              print(json.load(open(sys.argv[1])).get('value') or '')
+          except Exception:
+              print('')
+          PY
+          }
+          previous_mode=$(previous_value /tmp/previous-test-mode.json)
+          previous_tokens=$(previous_value /tmp/previous-test-tokens.json)
+          put_env() {
+            local key="$1" value="$2"
+            VALUE="$value" python - <<'PY' > /tmp/render-env.json
+          import json, os
+          print(json.dumps({'value': os.environ['VALUE']}))
+          PY
+            code=$(curl --silent --show-error --max-time 60 -o /tmp/render-env-response.json -w '%{http_code}' \
+              -X PUT -H 'Accept: application/json' -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer ${api_key}" --data-binary @/tmp/render-env.json \
+              "https://api.render.com/v1/services/${SERVICE_ID}/env-vars/${key}")
+            test "$code" = '200'
+          }
+          put_env SCIOS_TEST_MODE "${previous_mode:-false}"
+          put_env SCIOS_TEST_ACCESS_TOKENS "$previous_tokens"
+          deploy_code=$(curl --silent --show-error --max-time 60 -o /tmp/render-cleanup-deploy.json -w '%{http_code}' \
+            -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer ${api_key}" --data '{}' \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploy")
+          test "$deploy_code" = '201' -o "$deploy_code" = '202'
+          for attempt in $(seq 1 60); do
+            sleep 5
+            ready=$(curl --silent --show-error --max-time 45 -o /tmp/final-ready.json -w '%{http_code}' "$ORIGIN/readyz" || true)
+            [ "$ready" = '200' ] && break
+          done
+          test "${ready:-000}" = '200'
+          rm -f /tmp/hosted-qa-token /tmp/render-env.json /tmp/render-env-response.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hosted-authenticated-browser-acceptance
+          path: |
+            /tmp/hosted-auth-qa
+            /tmp/ready.json
+            /tmp/final-ready.json
+            /tmp/qa-deploy-id
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Publish result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" \
+            --body "Hosted authenticated browser acceptance: browser=${{ steps.browser.outcome }}; cleanup completed; workflow run ID=${{ github.run_id }}."
+
+      - name: Enforce hosted acceptance
+        if: always() && (steps.enable.outcome != 'success' || steps.browser.outcome != 'success')
+        run: exit 1
