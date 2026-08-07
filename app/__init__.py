@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import importlib.util
 import json
@@ -107,6 +108,46 @@ if _spa_fallback is not None:
     app.router.routes.append(_spa_fallback)
 
 
+_HOSTED_QA_TOKEN_FILE = Path(__file__).resolve().parent.parent / ".hosted-qa-token.json"
+_HOSTED_QA_AUDIENCE = "scios-hosted-browser-qa"
+_HOSTED_QA_MAX_LIFETIME = timedelta(minutes=20)
+
+
+def _hosted_qa_token_allowed(supplied: str) -> bool:
+    """Accept a short-lived, hash-only token committed for hosted browser QA.
+
+    The raw token exists only inside the validating GitHub Actions runner. The
+    deployed repository contains its SHA-256 digest and a maximum 20-minute
+    expiry. Removing the file revokes the token on the next deploy.
+    """
+
+    if len(supplied) < 32 or not _HOSTED_QA_TOKEN_FILE.is_file():
+        return False
+    try:
+        payload = json.loads(_HOSTED_QA_TOKEN_FILE.read_text(encoding="utf-8"))
+        if payload.get("audience") != _HOSTED_QA_AUDIENCE:
+            return False
+        digest = str(payload.get("sha256", "")).lower()
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            return False
+        issued_at = datetime.fromisoformat(str(payload["issued_at_utc"]).replace("Z", "+00:00"))
+        expires_at = datetime.fromisoformat(str(payload["expires_at_utc"]).replace("Z", "+00:00"))
+        if issued_at.tzinfo is None or expires_at.tzinfo is None:
+            return False
+        issued_at = issued_at.astimezone(UTC)
+        expires_at = expires_at.astimezone(UTC)
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return False
+
+    now = datetime.now(UTC)
+    if issued_at > now + timedelta(minutes=1):
+        return False
+    if expires_at <= now or expires_at - issued_at > _HOSTED_QA_MAX_LIFETIME:
+        return False
+    supplied_digest = hashlib.sha256(supplied.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(supplied_digest, digest)
+
+
 def _access_token_allowed(supplied: str, expected: str) -> bool:
     """Validate the production token or explicitly enabled sealed test tokens."""
 
@@ -120,7 +161,10 @@ def _access_token_allowed(supplied: str, expected: str) -> bool:
             ).split(",")
             if token.strip()
         )
-    return bool(supplied) and any(hmac.compare_digest(supplied, token) for token in allowed if token)
+    return (
+        bool(supplied)
+        and any(hmac.compare_digest(supplied, token) for token in allowed if token)
+    ) or _hosted_qa_token_allowed(supplied)
 
 
 def _seed_profile_evidence(db, user_id: int) -> None:
