@@ -150,15 +150,35 @@ jobs:
               assert page.locator('.role-continuity-summary').count() == 0
               assert '#role/' in page.url
               back_label = page.locator('#embedded-back').inner_text()
-              page.screenshot(path=str(out / f'{name}-02-role.png'), full_page=False)
+              role_id = page.url.split('#role/', 1)[1].split('/', 1)[0]
+              page.screenshot(path=str(out / f'{name}-02-role-overview.png'), full_page=False)
 
-              page.locator('#embedded-back').click()
-              page.get_by_role('heading', name='Opportunities', exact=True).wait_for(timeout=60000)
+              # Reproduce the exact deep-link family that was visibly broken in
+              # production: a role-specific application page opened directly.
+              page.goto(f'{origin}/?hosted=application#role/{role_id}/application', wait_until='networkidle', timeout=180000)
+              page.locator('#app:not([hidden])').wait_for(timeout=60000)
+              page.locator('.object-page').wait_for(timeout=60000)
+              page.get_by_role('button', name='← Applications').wait_for(timeout=60000)
+              assert page.locator('#route-title').inner_text() == 'Application'
+              assert page.locator('.detail-tabs [data-detail-tab="application"].active').count() == 1
+              assert page.locator('.detail-footer').count() == 0
+              assert page.locator('.role-continuity-summary').count() == 0
+              next_action_color = page.locator('#detail-next-action').evaluate('node => getComputedStyle(node).color')
+              assert next_action_color in {'rgb(17, 24, 39)', 'rgb(15, 23, 42)'}, next_action_color
+              page.screenshot(path=str(out / f'{name}-03-role-application.png'), full_page=False)
+
+              page.locator('.detail-tabs [data-detail-tab="preparation"]:visible').click()
+              page.locator('.detail-tabs [data-detail-tab="preparation"].active').wait_for(timeout=60000)
+              assert page.locator('#route-title').inner_text() == 'Preparation'
+              assert '#role/' in page.url and page.url.endswith('/preparation')
+              page.screenshot(path=str(out / f'{name}-04-role-preparation.png'), full_page=False)
+
               page.get_by_role('button', name='Apply' if width < 700 else 'Applications', exact=True).click()
               page.get_by_role('heading', name='Applications', exact=True).wait_for(timeout=60000)
-              page.screenshot(path=str(out / f'{name}-03-applications.png'), full_page=False)
+              page.screenshot(path=str(out / f'{name}-05-applications.png'), full_page=False)
               page.locator('[data-route="interviews"]:visible').first.click()
               page.get_by_role('heading', name='Prepare', exact=True).wait_for(timeout=60000)
+              page.screenshot(path=str(out / f'{name}-06-prepare.png'), full_page=False)
               page.reload(wait_until='networkidle', timeout=180000)
               page.locator('#app:not([hidden])').wait_for(timeout=60000)
               assert page.locator('#auth').is_hidden()
@@ -172,6 +192,8 @@ jobs:
                   'horizontal_overflow_px': overflow,
                   'embedded_role_page_opened': True,
                   'back_action_label': back_label,
+                  'direct_role_application_opened': True,
+                  'role_preparation_opened': True,
                   'applications_page_opened': True,
                   'preparation_page_opened': True,
                   'session_persisted_after_reload': True,
