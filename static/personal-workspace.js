@@ -75,7 +75,7 @@ async function navigate(target, { push = true, restoreScroll = null } = {}) {
       setChrome(state.route);
       window.SCIOS_DETAIL_CONTEXT = { originLabel: ROUTE_COPY[workspace.returnContext?.route || state.route]?.[0] || "Opportunities", roleId: target.id, section: target.section };
       ensureDetailStaging();
-      await openRoleWorkspace(Number(target.id), target.section);
+      await openRoleWorkspace(Number(target.id), { tab: target.section });
       embedStagedDetail(target.id, target.section);
     } else {
       state.route = target.route;
@@ -146,13 +146,22 @@ const detailObserver = new MutationObserver(() => {
   const staged = drawer?.querySelector("#detail-content");
   if (!drawer || drawer.hidden || !staged || !staged.childElementCount) return;
   const parsed = parseLocation();
-  if (parsed.kind === "role") queueMicrotask(() => embedStagedDetail(parsed.id, parsed.section));
+  if (parsed.kind !== "role") return;
+  const activeSection = staged.querySelector(".detail-tab.active")?.dataset.detailTab || parsed.section;
+  history.replaceState({ scios: true }, "", `#role/${parsed.id}/${activeSection}`);
+  queueMicrotask(() => embedStagedDetail(parsed.id, activeSection));
 });
 
-document.addEventListener("DOMContentLoaded", () => {
+function observeDetailStaging() {
   const drawer = $("#detail-drawer");
   if (drawer) detailObserver.observe(drawer, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
-});
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", observeDetailStaging, { once: true });
+} else {
+  observeDetailStaging();
+}
 
 function actionDestination(action) {
   if (!action.job_id) return { label: "Review profile", handler: () => goRoute("profile") };
