@@ -147,7 +147,7 @@ jobs:
               visible_text(page.locator('.detail-header h1'))
               no_clutter(page)
               assert page.locator('.role-decision-flow').count() == 1
-              assert page.locator('.detail-header .primary-cta').count() == 1
+              assert page.locator('.detail-header-action .button').count() == 1
               assert '#role/' in page.url
               role_id = page.url.split('#role/', 1)[1].split('/', 1)[0]
               page.screenshot(path=str(out / f'{name}-02-role-overview.png'))
