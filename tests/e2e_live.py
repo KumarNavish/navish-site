@@ -200,8 +200,8 @@ def run() -> None:
 
         open_private(page)
         page.get_by_role("heading", name="Today", exact=True).wait_for()
-        assert page.locator(".page-header").is_hidden()
-        assert page.get_by_text("Do this now", exact=True).count() <= 1
+        assert page.locator(".page-header").is_visible()
+        assert page.get_by_text("One action worth doing.", exact=True).count() <= 1
         screenshot(page, "workspace-01-today-mobile-390.png")
         steps.append("Authenticated app shell became visible and Today rendered")
 
@@ -217,24 +217,25 @@ def run() -> None:
 
         role.click()
         page.get_by_role("button", name="← Opportunities").wait_for()
-        page.get_by_text("You have a credible reason to be interviewed.", exact=True).wait_for()
+        page.get_by_text("Why this may convert", exact=True).wait_for()
         assert_role_workspace(page, job_id, "overview", "opportunities")
         assert page.get_by_text("Interview range", exact=True).count() == 0
         assert page.get_by_text("Offer after interview", exact=True).count() == 0
         assert page.locator(".detail-summary-grid").count() == 0
         assert page.locator(".decision-evidence").count() == 0
         assert page.locator(".structured-list").count() == 0
-        assert page.get_by_text("What could stop an interview", exact=True).is_visible()
-        assert page.get_by_text("Next move", exact=True).is_visible()
+        assert page.get_by_text("Main screening risk", exact=True).is_visible()
+        assert page.locator(".role-action-line").is_visible()
+        assert page.get_by_text("Next move", exact=True).count() == 0
         screenshot(page, "workspace-03-role-page-mobile-390.png")
         steps.append("Role opened with identity first, semantic navigation and no overlay")
 
-        page.get_by_role("button", name="Pursue this role", exact=True).click()
+        page.get_by_role("button", name="Prepare application", exact=True).click()
         page.get_by_role("heading", name="Prepare this application?").wait_for()
         page.get_by_role("button", name="Prepare package").click()
-        page.get_by_text("Three reasons this application is credible", exact=True).wait_for()
+        page.get_by_text("What the recruiter should understand", exact=True).wait_for()
         assert_role_workspace(page, job_id, "application", "applications")
-        package_box = page.locator(".application-next").bounding_box()
+        package_box = page.locator(".application-lead").bounding_box()
         tracking_box = page.locator(".application-control-disclosure").bounding_box()
         assert package_box and tracking_box and package_box["y"] < tracking_box["y"]
         page.get_by_role("button", name="Mark ready", exact=True).click()
@@ -243,9 +244,9 @@ def run() -> None:
         assert "Ready to apply" in page.locator(".application-control-disclosure summary small").inner_text()
         assert_role_workspace(page, job_id, "application", "applications")
         assert page.locator(".application-control-disclosure").is_visible()
-        page.get_by_text("Evidence coverage", exact=True).wait_for()
+        page.get_by_text("Requirement evidence", exact=True).wait_for()
         assert page.locator(".requirement-row.missing").count() == 0
-        page.get_by_text("Evidence coverage", exact=True).click()
+        page.get_by_text("Requirement evidence", exact=True).click()
         page.get_by_text("CL-PLO", exact=True).wait_for()
         assert_toast_clears_mobile_navigation(page)
         wait_for_toast_to_clear(page)
@@ -262,7 +263,7 @@ def run() -> None:
         screenshot(page, "workspace-05-applications-mobile-390.png")
 
         click_route(page, "interviews")
-        page.get_by_role("heading", name="Prepare", exact=True).wait_for()
+        page.get_by_role("heading", name="Practice", exact=True).wait_for()
         assert not page.locator("#toast.show").is_visible()
         page.get_by_text(ROLE_COMPANY, exact=False).first.wait_for()
         assert page.get_by_role("heading", name="Role", exact=True).count() == 0
@@ -272,9 +273,10 @@ def run() -> None:
         click_route(page, "today")
         page.get_by_role("heading", name="Today", exact=True).wait_for()
         page.locator(".hiring-focus").wait_for()
-        page.get_by_text("Do this now", exact=True).wait_for()
+        assert page.get_by_text("Do this now", exact=True).count() == 0
         assert page.locator(".primary-move .button.primary").count() == 1
         assert page.get_by_role("heading", name="Upcoming", exact=True).count() == 0
+        assert page.get_by_role("heading", name="Next", exact=True).count() <= 1
         screenshot(page, "workspace-06b-today-action-mobile-390.png")
         steps.append("Today returned to one primary hiring action after application preparation")
         context.close()
@@ -307,14 +309,13 @@ def run() -> None:
         page.goto(f"{ORIGIN}/?direct=application#role/{job_id}/application", wait_until="networkidle")
         page.get_by_role("button", name="← Applications").wait_for()
         assert_role_workspace(page, job_id, "application", "applications")
-        assert page.locator("#detail-next-action").evaluate(
-            "node => getComputedStyle(node).color"
-        ) in {"rgb(17, 24, 39)", "rgb(15, 23, 42)"}
+        assert page.locator(".compact-next-action").is_visible()
+        assert page.locator(".application-control-disclosure").count() == 1
         screenshot(page, "workspace-09-application-page-desktop-1440.png")
         steps.append("Direct application deep link restored the correct role and Applications context")
 
         page.locator('.detail-tabs [data-detail-tab="preparation"]:visible').click()
-        page.get_by_text("sessions complete", exact=False).first.wait_for()
+        page.get_by_text("of", exact=False).filter(has_text="complete").first.wait_for()
         assert_role_workspace(page, job_id, "preparation", "interviews")
         screenshot(page, "workspace-10-preparation-page-desktop-1440.png")
         steps.append("Role-specific preparation opened without losing spatial context")
@@ -329,7 +330,7 @@ def run() -> None:
             open_private(page)
             if viewport["width"] <= 900:
                 assert page.locator(".mobile-nav").is_visible()
-                assert page.locator("#menu-toggle").is_hidden()
+                assert page.locator("#menu-toggle").count() == 0
             else:
                 assert page.locator(".workspace-nav-list").is_visible()
             click_route(page, "opportunities")

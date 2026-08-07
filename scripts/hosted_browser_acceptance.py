@@ -89,7 +89,7 @@ def run_viewport(
     role_title = visible_text(page.locator(".detail-header h1"))
     assert_no_clutter(page)
     assert page.locator(".role-decision-flow").count() == 1
-    assert page.locator(".detail-header-action .button").count() == 1
+    assert page.locator(".role-action-line .button").count() == 1
     assert "#role/" in page.url
     role_id = page.url.split("#role/", 1)[1].split("/", 1)[0]
     page.screenshot(path=str(out / f"{name}-02-role-overview.png"))
@@ -106,7 +106,7 @@ def run_viewport(
     assert page.locator("#route-title").inner_text() == "Application"
     assert page.locator('.detail-tabs [data-detail-tab="application"].active').count() == 1
     assert page.locator(".application-flow").count() == 1
-    application_next = visible_text(page.locator(".application-next h2"))
+    application_next = visible_text(page.locator(".compact-next-action strong"))
     assert_no_clutter(page)
     page.screenshot(path=str(out / f"{name}-03-role-application.png"))
     checkpoints.append("role_application")
@@ -127,7 +127,7 @@ def run_viewport(
     checkpoints.append("applications")
 
     page.locator('[data-route="interviews"]:visible').first.click()
-    visible_text(page.get_by_role("heading", name="Prepare", exact=True))
+    visible_text(page.get_by_role("heading", name="Practice", exact=True))
     page.screenshot(path=str(out / f"{name}-06-prepare.png"))
     checkpoints.append("prepare")
 
