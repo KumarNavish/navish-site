@@ -5,7 +5,7 @@ on:
     types: [opened]
 
 permissions:
-  contents: write
+  contents: read
   issues: write
 
 jobs:
@@ -39,79 +39,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Source artifact ready. Workflow run ID: ${{ github.run_id }}"
-
-  apply-useful-workspace-repair:
-    if: github.event.issue.user.login == 'KumarNavish' && contains(github.event.issue.title, '[APPLY USEFUL WORKSPACE REPAIR]')
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: fix/useful-role-workspace-v2
-          fetch-depth: 0
-      - name: Apply the locally validated repair
-        id: apply
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import hashlib
-          from pathlib import Path
-
-          path = Path('.repair/p2-01')
-          data = path.read_text()
-          expected = 'a5e24299c822a811eead71f51ff62af8b93f995e744208e00563575b4309b6a1'
-          if hashlib.sha256(data.encode()).hexdigest() != expected:
-              if len(data) != 999:
-                  raise SystemExit(f'unexpected p2-01 length: {len(data)}')
-              data = data[:270] + 'p' + data[270:]
-              if hashlib.sha256(data.encode()).hexdigest() != expected:
-                  raise SystemExit('p2-01 deterministic repair did not match expected digest')
-              path.write_text(data)
-          PY
-          cat \
-            .repair/repair.patch.gz.b64.part-00 \
-            .repair/repair.patch.gz.b64.part-01 \
-            .repair/p2-00 .repair/p2-01 .repair/p2-02 .repair/p2-03 \
-            .repair/p2-04 .repair/p2-05 .repair/p2-06 .repair/p2-07 \
-            .repair/p2-08 .repair/p2-09 .repair/p2-10 .repair/p2-11 \
-            .repair/repair.patch.gz.b64.part-03 \
-            > /tmp/useful-role-workspace.b64
-          echo '54818e9720335da90019905d8a90affc44029ce8e324036877878750a346eb7f  /tmp/useful-role-workspace.b64' | sha256sum --check
-          base64 --decode /tmp/useful-role-workspace.b64 > /tmp/useful-role-workspace.patch.gz
-          echo '659b74c8dd61f4dc2f9b5a3f3cc1a56ee86f98593b5a0327d27a274fa820464b  /tmp/useful-role-workspace.patch.gz' | sha256sum --check
-          gzip --decompress --stdout /tmp/useful-role-workspace.patch.gz > /tmp/useful-role-workspace.patch
-          echo '1c0d3b0037889b88af1e70d9f5c991d3499722fe33dae28311c002547290ecd2  /tmp/useful-role-workspace.patch' | sha256sum --check
-          git apply --check /tmp/useful-role-workspace.patch
-          git apply /tmp/useful-role-workspace.patch
-          # The repository integration can update workflow files directly, but
-          # the issue-run token cannot. Keep the branch commit limited to product
-          # and test code; workflow changes are applied separately after merge.
-          git checkout HEAD -- .github/workflows
-          rm -rf .repair .repair-bootstrap
-      - name: Verify repaired source
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m compileall -q app app.py tests
-          for file in static/*.js; do node --check "$file"; done
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          pytest -q
-          find . -type d -name __pycache__ -prune -exec rm -rf {} +
-          find . -type f -name '*.pyc' -delete
-      - name: Commit repaired workspace
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'Swiss Career Intelligence Repair'
-          git config user.email 'actions@users.noreply.github.com'
-          git add -A
-          git commit -m 'Rebuild role application and preparation workspace'
-          git push origin HEAD:fix/useful-role-workspace-v2
-      - name: Publish repair result
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Useful role workspace repair workflow completed with result: ${{ job.status }}. Workflow run ID: ${{ github.run_id }}"
