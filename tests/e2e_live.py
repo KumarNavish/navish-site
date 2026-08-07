@@ -153,7 +153,10 @@ def run() -> None:
         page.get_by_role("button", name="Pursue", exact=True).click()
         page.get_by_role("heading", name="Prepare this application?").wait_for()
         page.get_by_role("button", name="Prepare package").click()
-        page.get_by_text("Ready for review", exact=True).wait_for()
+        ready_badge = page.locator('.object-page .status-badge:visible', has_text="Ready for review")
+        ready_badge.wait_for()
+        assert f"#role/{job_id}/application" in page.url
+        assert page.locator("#detail-drawer").is_hidden()
         screenshot(page, "workspace-04-application-page-mobile-390.png")
         steps.append("Pursue created an evidence-linked package without submission")
 
