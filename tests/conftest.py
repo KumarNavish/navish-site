@@ -2,16 +2,37 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import sys
+import tempfile
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-_TEST_DATABASE = Path("/tmp/scios-complete-test-suite.db")
-_TEST_DATABASE.unlink(missing_ok=True)
+# A unique database per pytest process prevents stale SQLite handles from a
+# previous interrupted run or a concurrent browser/server process from
+# corrupting collection. All test modules import the same process-local URL.
+_TEST_DATABASE = Path(tempfile.gettempdir()) / (
+    f"scios-test-{os.getpid()}-{uuid.uuid4().hex}.db"
+)
+
+
+def _cleanup_test_database() -> None:
+    for candidate in (
+        _TEST_DATABASE,
+        Path(f"{_TEST_DATABASE}-journal"),
+        Path(f"{_TEST_DATABASE}-shm"),
+        Path(f"{_TEST_DATABASE}-wal"),
+    ):
+        candidate.unlink(missing_ok=True)
+
+
+_cleanup_test_database()
+atexit.register(_cleanup_test_database)
 
 # Configure one deterministic database and access policy before any test module
 # imports the application. Individual test modules use setdefault(), so these

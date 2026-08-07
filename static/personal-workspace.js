@@ -4,26 +4,32 @@ import {
   $, $$, api, clearToast, escapeHtml, formatDate, formatRelative, icon, loading,
   errorState, state, statusTone, toast,
 } from "./ui.js";
-import { openRoleWorkspace } from "./workspace-detail.js?v=workspace5";
+import { openRoleWorkspace } from "./workspace-detail.js?v=focus10";
 
 const ROUTE_COPY = {
-  today: ["Today", "Your next useful move"],
-  opportunities: ["Opportunities", "Only roles worth your attention"],
-  applications: ["Applications", "Move each serious role forward"],
-  interviews: ["Prepare", "Practice remains attached to the role"],
-  profile: ["Profile", "Evidence, constraints, and preferences"],
+  today: ["Today", "Your next move"],
+  opportunities: ["Opportunities", "Roles worth acting on"],
+  applications: ["Applications", "One next step per role"],
+  interviews: ["Prepare", "Practice for active roles"],
+  profile: ["Profile", "Evidence and constraints"],
 };
 const TOP_LEVEL = new Set(Object.keys(ROUTE_COPY));
 const SECTION_COPY = {
-  overview: "Overview",
+  overview: "Role",
   application: "Application",
-  preparation: "Preparation",
+  preparation: "Practice",
 };
 const workspace = { roles: [], applications: [], preparation: [], profile: null, today: [], summary: null, returnContext: null };
 let routeToken = 0;
 
 function text(value, fallback = "") { return value === null || value === undefined || value === "" ? fallback : String(value); }
 function number(value, fallback = 0) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
+function candidateCopy(value) {
+  return text(value)
+    .replace(/\bNavish(?:[’']s)\b/g, "your")
+    .replace(/\bhis\b/gi, "your")
+    .replace(/\bNavish\b/g, "you");
+}
 function status(value) { const tone = statusTone(String(value)); return `<span class="status-text ${tone}">${escapeHtml(text(value, "Unconfirmed"))}</span>`; }
 function formatMoney(amount) { const numeric = Number(amount); return Number.isFinite(numeric) ? new Intl.NumberFormat("en-CH", { maximumFractionDigits: 0 }).format(numeric) : ""; }
 function compensationView(role) {
@@ -194,42 +200,77 @@ function renderToday() {
   const actions = workspace.today.slice(0, 3);
   const primary = actions[0];
   const later = actions.slice(1);
-  const upcoming = (workspace.summary?.events || []).slice(0, 4);
+  const actionJobIds = new Set(actions.map((item) => String(item.job_id || "")).filter(Boolean));
+  const actionTitles = new Set(actions.map((item) => text(item.title).toLowerCase().trim()).filter(Boolean));
+  const upcoming = (workspace.summary?.events || []).filter((event) => {
+    const sameRole = event.job_id && actionJobIds.has(String(event.job_id));
+    const sameTitle = actionTitles.has(text(event.title).toLowerCase().trim());
+    return !sameRole && !sameTitle;
+  }).slice(0, 3);
   const primaryHtml = primary ? (() => {
     const destination = actionDestination(primary);
-    return `<section class="primary-move"><p class="context">${escapeHtml(text(primary.opportunity, "Highest-value hiring path"))}</p><h2>${escapeHtml(primary.title)}</h2><p class="reason">${escapeHtml(text(primary.why || primary.rationale, "This is the action most likely to move a serious opportunity forward."))}</p><div class="primary-meta"><span>${escapeHtml(text(primary.duration || primary.duration_minutes, "20"))} min</span><span>${escapeHtml(text(primary.deadline, "Do next"))}</span></div><div class="primary-actions">${button(destination.label, `data-primary-action="${primary.id}"`)}${button("Mark complete", `data-complete-action="${primary.id}"`, true)}</div></section>`;
-  })() : `<section class="primary-move"><p class="context">Today</p><h2>No consequential action is due.</h2><p class="reason">The system will add work only when it can change the probability of reaching the next hiring stage.</p><div class="primary-actions">${button("Review opportunities", 'data-route="opportunities"')}</div></section>`;
-  const laterHtml = later.length ? `<div class="next-list">${later.map((item, index) => `<div class="next-row"><span class="next-index">${index + 2}</span><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(text(item.opportunity))} · ${escapeHtml(text(item.duration || item.duration_minutes, "20"))} min</span></div><button class="section-link" data-open-action="${item.id}">Open</button></div>`).join("")}</div>` : `<p class="row-context">Nothing else needs your attention today.</p>`;
-  const upcomingHtml = upcoming.length ? `<div class="clean-list">${upcoming.map((event) => `<div class="clean-row" data-open-role="${event.job_id || ""}" tabindex="0"><div class="clean-row-main"><h3 class="row-title">${escapeHtml(event.title)}</h3><p class="row-context">${escapeHtml(text(event.kind))} · ${escapeHtml(formatDate(event.at, true))}</p></div><div class="row-side"><strong>${escapeHtml(formatRelative(event.at))}</strong></div></div>`).join("")}</div>` : "";
-  $("#view").innerHTML = `<div class="flow-page">${pageHeader("Today", "One clear next move, with everything else kept quiet.")}${primaryHtml}${section("Next", "Only actions that can advance a serious hiring path.", laterHtml)}${upcomingHtml ? section("Upcoming", "Confirmed deadlines, follow-ups, and preparation.", upcomingHtml) : ""}</div>`;
+    const opportunity = text(primary.opportunity, "Highest-value hiring path");
+    return `<section class="primary-move hiring-focus">
+      <p class="focus-label">Do this now</p>
+      <p class="focus-context">${escapeHtml(opportunity)}</p>
+      <h2>${escapeHtml(primary.title)}</h2>
+      <p class="reason">${escapeHtml(text(primary.why || primary.rationale, "This is the action most likely to move a serious opportunity forward."))}</p>
+      <div class="primary-meta"><span>${escapeHtml(text(primary.duration || primary.duration_minutes, "20"))} min</span><span>${escapeHtml(text(primary.deadline, "Today"))}</span></div>
+      <div class="primary-actions">${button(destination.label, `data-primary-action="${primary.id}"`)}<button class="quiet-action" data-complete-action="${primary.id}">Done</button></div>
+    </section>`;
+  })() : `<section class="primary-move hiring-focus empty-focus"><p class="focus-label">Today</p><h2>No consequential action is due.</h2><p class="reason">The workspace stays quiet until an action can materially improve a real hiring path.</p><div class="primary-actions">${button("Review opportunities", 'data-route="opportunities"')}</div></section>`;
+  const laterHtml = later.length ? `<div class="next-list">${later.map((item) => `<button class="next-row next-row-button" data-open-action="${item.id}"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(text(item.opportunity))} · ${escapeHtml(text(item.duration || item.duration_minutes, "20"))} min</span></div><span class="row-arrow" aria-hidden="true">→</span></button>`).join("")}</div>` : "";
+  const upcomingHtml = upcoming.length ? `<div class="clean-list compact-list">${upcoming.map((event) => `<div class="clean-row" data-open-role="${event.job_id || ""}" tabindex="0"><div class="clean-row-main"><h3 class="row-title">${escapeHtml(event.title)}</h3><p class="row-context">${escapeHtml(text(event.kind))} · ${escapeHtml(formatDate(event.at, true))}</p></div><div class="row-side"><strong>${escapeHtml(formatRelative(event.at))}</strong></div></div>`).join("")}</div>` : "";
+  $("#view").innerHTML = `<div class="flow-page focus-page">${pageHeader("Today", "Do the work most likely to advance a real application.")}${primaryHtml}${laterHtml ? section("After this", "", laterHtml) : ""}${upcomingHtml ? section("Upcoming", "", upcomingHtml) : ""}</div>`;
   bindCommon();
   $$('[data-primary-action]').forEach((node) => { const item = actions.find((x) => String(x.id) === node.dataset.primaryAction); if (item) node.onclick = actionDestination(item).handler; });
   $$('[data-open-action]').forEach((node) => { const item = actions.find((x) => String(x.id) === node.dataset.openAction); if (item) node.onclick = actionDestination(item).handler; });
-  $$('[data-complete-action]').forEach((node) => node.onclick = async () => { await api(`/api/live/today/${node.dataset.completeAction}/complete`, { method: "POST", body: "{}" }); toast("Action completed"); await navigate({ kind: "route", route: "today" }, { push: false }); });
+  $$('[data-complete-action]').forEach((node) => node.onclick = async () => { await api(`/api/live/today/${node.dataset.completeAction}/complete`, { method: "POST", body: "{}" }); toast("Done"); await navigate({ kind: "route", route: "today" }, { push: false }); });
 }
 
 function roleRow(role) {
   const recommendation = text(role.decision || role.judgment, "Investigate");
   const invitation = text(role.interview_band, "Unconfirmed");
   const compensation = compensationView(role);
-  return `<article class="clean-row role-row" data-open-role="${role.id}" tabindex="0" role="button" aria-label="Open ${escapeHtml(role.title)} at ${escapeHtml(role.company)}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(role.title)}</h2><p class="row-context">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p><p class="row-summary"><strong>Why it may convert:</strong> ${escapeHtml(text(role.why_interview, "Open the role to review the recommendation and evidence."))}</p><p class="row-blocker"><strong>Largest blocker:</strong> ${escapeHtml(text(role.blocker, "No material blocker recorded."))}</p><div class="row-meta"><span>${status(recommendation)}</span><span>${status(`${invitation} invitation case`)}</span></div></div><div class="row-side"><strong>${escapeHtml(compensation.label)}</strong><span>${escapeHtml(compensation.note)}</span><span>${escapeHtml(text(role.urgency, role.pipeline_state || "Review"))}</span></div></article>`;
+  const next = text(role.primary_strategy || role.urgency, "Review the role");
+  return `<article class="clean-row role-row" data-open-role="${role.id}" tabindex="0" role="button" aria-label="Open ${escapeHtml(role.title)} at ${escapeHtml(role.company)}">
+    <div class="clean-row-main">
+      <h2 class="row-title">${escapeHtml(role.title)}</h2>
+      <p class="row-context">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p>
+      <p class="row-summary">${escapeHtml(candidateCopy(text(role.why_interview, "Open the role to review the evidence.")))}</p>
+      <div class="row-meta"><strong>${escapeHtml(recommendation)}</strong><span>${escapeHtml(next)}</span><span>${escapeHtml(`${invitation} interview case`)}</span></div>
+    </div>
+    <div class="row-side"><strong>${escapeHtml(compensation.label)}</strong></div>
+  </article>`;
 }
 
 function renderOpportunities() {
   const roles = [...workspace.roles].sort((a,b) => number(b.hiring_opportunity_value || b.fit_score) - number(a.hiring_opportunity_value || a.fit_score));
-  $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Opportunities", "The strongest current roles, explained in terms of interview probability and the next credible action.")}<div class="simple-controls"><label class="search-control">${icon("search",17)}<input id="role-search" type="search" placeholder="Search roles or employers" aria-label="Search roles"></label><select id="role-filter" aria-label="Filter recommendations"><option value="all">All serious roles</option><option value="strong">Strongly pursue</option><option value="pursue">Pursue</option><option value="investigate">Investigate</option><option value="build">Build evidence first</option></select></div><div id="role-list" class="clean-list">${roles.length ? roles.map(roleRow).join("") : empty("No serious role is available", "Automatic discovery continues. Low-fit and stale roles remain suppressed.")}</div></div>`;
+  const controls = roles.length > 5 ? `<label class="search-control minimal-search">${icon("search",17)}<input id="role-search" type="search" placeholder="Search ${roles.length} serious roles" aria-label="Search roles"></label>` : "";
+  $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Opportunities", "Only roles with a credible path to an interview appear here.")}${controls ? `<div class="simple-controls">${controls}</div>` : ""}<div id="role-list" class="clean-list">${roles.length ? roles.map(roleRow).join("") : empty("No serious role is available", "Low-fit, stale, and weakly evidenced roles remain suppressed.")}</div></div>`;
   bindCommon();
-  const applyFilter = () => {
-    const query = $("#role-search").value.toLowerCase().trim(); const filter = $("#role-filter").value;
-    $$('#role-list .clean-row').forEach((row) => { const role = roleFor(row.dataset.openRole); const haystack = `${role?.title} ${role?.company} ${role?.location}`.toLowerCase(); const decision = text(role?.decision || role?.judgment).toLowerCase(); row.hidden = !haystack.includes(query) || (filter !== "all" && !decision.includes(filter)); });
-  };
-  $("#role-search").oninput = applyFilter; $("#role-filter").onchange = applyFilter;
+  if ($("#role-search")) {
+    $("#role-search").oninput = () => {
+      const query = $("#role-search").value.toLowerCase().trim();
+      $$('#role-list .clean-row').forEach((row) => {
+        const role = roleFor(row.dataset.openRole);
+        row.hidden = !`${role?.title} ${role?.company} ${role?.location}`.toLowerCase().includes(query);
+      });
+    };
+  }
 }
 
 function renderApplications() {
   const rows = workspace.applications.filter((app) => !["Rejected","Withdrawn","Closed"].includes(app.state));
-  const content = rows.length ? `<div class="clean-list">${rows.map((app) => { const identity = roleIdentity(app.job_id); return `<article class="clean-row" data-open-application="${app.job_id}" tabindex="0" role="button" aria-label="Open application for ${escapeHtml(identity.title || app.title || "role")}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(identity.title || app.title || "Application")}</h2><p class="row-context">${escapeHtml(identity.company || app.company || "Employer unconfirmed")}${identity.location || app.location ? ` · ${escapeHtml(identity.location || app.location)}` : ""}</p><p class="row-summary">${escapeHtml(text(app.next_action, "Review the role and set one explicit next action."))}</p><div class="row-meta"><span>${status(app.state)}</span><span>${app.next_action_deadline ? `Due ${escapeHtml(formatDate(app.next_action_deadline,true))}` : "No deadline confirmed"}</span></div></div><div class="row-side"><strong>${escapeHtml(app.package_ready ? "Package ready" : "Preparation needed")}</strong><span>${escapeHtml(text(app.stage_age_days, "0"))} days in stage</span></div></article>`; }).join("")}</div>` : empty("No active application", "Pursuing a role creates a truthful, evidence-linked application workspace here.");
-  $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Applications", "Each application stays attached to its role, evidence, deadlines, preparation, and history.")}${content}</div>`;
+  const content = rows.length ? `<div class="clean-list">${rows.map((app) => {
+    const identity = roleIdentity(app.job_id);
+    const due = app.next_action_deadline ? `Due ${formatDate(app.next_action_deadline, true)}` : "No deadline confirmed";
+    return `<article class="clean-row application-row" data-open-application="${app.job_id}" tabindex="0" role="button" aria-label="Open application for ${escapeHtml(identity.title || app.title || "role")}">
+      <div class="clean-row-main"><h2 class="row-title">${escapeHtml(identity.title || app.title || "Application")}</h2><p class="row-context">${escapeHtml(identity.company || app.company || "Employer unconfirmed")}${identity.location || app.location ? ` · ${escapeHtml(identity.location || app.location)}` : ""}</p><p class="row-summary"><strong>Next:</strong> ${escapeHtml(text(app.next_action, "Set one explicit next action."))}</p><div class="row-meta"><strong>${escapeHtml(app.state)}</strong><span>${escapeHtml(due)}</span></div></div>
+      <div class="row-side"><strong>${escapeHtml(app.package_ready ? "Package ready" : "Package not ready")}</strong></div>
+    </article>`;
+  }).join("")}</div>` : empty("No active application", "Pursuing a role creates one evidence-linked application workspace here.");
+  $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Applications", "Every active role has one next move.")}${content}</div>`;
   bindCommon();
   $$('[data-open-application]').forEach((row) => row.onclick = () => openRole(row.dataset.openApplication, "application"));
 }
@@ -241,8 +282,8 @@ function renderInterviews() {
     const next = [...sessions].sort((a,b) => new Date(a.due_at || 0) - new Date(b.due_at || 0))[0];
     return { jobId, sessions, next, identity: roleIdentity(jobId, next) };
   }).filter((group) => group.identity.title);
-  const content = validGroups.length ? `<div class="clean-list">${validGroups.map(({ jobId, sessions, next, identity }) => `<article class="clean-row preparation-row" data-open-preparation="${jobId}" tabindex="0" role="button" aria-label="Open preparation for ${escapeHtml(identity.title)}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(identity.title)}</h2><p class="row-context">${escapeHtml(identity.company || "Employer unconfirmed")}${identity.location ? ` · ${escapeHtml(identity.location)}` : ""}</p><p class="row-summary"><strong>Next:</strong> ${escapeHtml(text(next?.competency || next?.prompt, "Role-specific preparation"))}</p><div class="row-meta"><span>${sessions.length} session${sessions.length === 1 ? "" : "s"} remaining</span></div></div><div class="row-side"><strong>Start · ${escapeHtml(text(next?.duration || next?.duration_minutes, "30"))} min</strong><span>${next?.due_at ? escapeHtml(formatRelative(next.due_at)) : "Plan available"}</span></div></article>`).join("")}</div>` : empty("No preparation is due", "Preparation appears here only when it belongs to an active opportunity or interview.");
-  $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Prepare", "Practice the specific reasoning, evidence, and communication required by an active role.")}${content}</div>`;
+  const content = validGroups.length ? `<div class="clean-list">${validGroups.map(({ jobId, next, identity }) => `<article class="clean-row preparation-row" data-open-preparation="${jobId}" tabindex="0" role="button" aria-label="Open preparation for ${escapeHtml(identity.title)}"><div class="clean-row-main"><h2 class="row-title">${escapeHtml(identity.title)}</h2><p class="row-context">${escapeHtml(identity.company || "Employer unconfirmed")}${identity.location ? ` · ${escapeHtml(identity.location)}` : ""}</p><p class="row-summary">${escapeHtml(text(next?.competency || next?.prompt, "Role-specific preparation"))}</p><div class="row-meta"><strong>${escapeHtml(text(next?.duration || next?.duration_minutes, "30"))} min</strong><span>${next?.due_at ? `Due ${escapeHtml(formatDate(next.due_at, true))}` : "Plan available"}</span></div></div><div class="row-side"><strong>Start session</strong></div></article>`).join("")}</div>` : empty("No preparation is due", "Practice appears only when it is tied to an active role.");
+  $("#view").innerHTML = `<div class="flow-page wide">${pageHeader("Prepare", "Practice only what can change an active hiring outcome.")}${content}</div>`;
   bindCommon();
   $$('[data-open-preparation]').forEach((row) => row.onclick = () => openRole(row.dataset.openPreparation, "preparation"));
 }

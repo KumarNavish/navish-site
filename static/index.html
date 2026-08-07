@@ -9,7 +9,7 @@
   <link rel="manifest" href="/assets/manifest-workspace.webmanifest?v=workspace1">
   <link rel="icon" href="/assets/icon.svg">
   <link rel="stylesheet" href="/assets/live.css?v=live9">
-  <link rel="stylesheet" href="/assets/workspace-white.css?v=workspace9">
+  <link rel="stylesheet" href="/assets/workspace-white.css?v=focus10">
 </head>
 <body>
   <div id="auth" class="auth-surface"></div>
@@ -17,7 +17,7 @@
     <aside id="sidebar" class="workspace-nav" aria-label="Primary navigation">
       <button class="workspace-brand" data-route="today" aria-label="Open Today">
         <span class="workspace-mark" aria-hidden="true">N</span>
-        <span><strong>Career workspace</strong><small>Switzerland</small></span>
+        <span><strong>Hiring</strong><small>Switzerland</small></span>
       </button>
       <nav class="workspace-nav-list">
         <button data-route="today"><span>Today</span></button>
@@ -37,7 +37,7 @@
         <button id="menu-toggle" class="plain-icon mobile-only" aria-label="Open navigation">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
-        <div class="route-heading"><strong id="route-title">Today</strong><span id="route-subtitle">Your next useful move</span></div>
+        <div class="route-heading"><strong id="route-title" role="heading" aria-level="1">Today</strong><span id="route-subtitle">Your next useful move</span></div>
         <button class="top-profile" data-route="profile" aria-label="Open profile"><span class="profile-avatar">NK</span></button>
         <button id="logout" class="text-button" hidden>Sign out</button>
       </header>
@@ -56,6 +56,6 @@
   <dialog id="dialog"><div id="dialog-body"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/assets/workspace-request-queue.js?v=workspace4"></script>
-  <script src="/assets/workspace-access.js?v=workspace9" defer></script>
+  <script src="/assets/workspace-access.js?v=focus10" defer></script>
 </body>
 </html>
