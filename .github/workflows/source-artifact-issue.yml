@@ -1,0 +1,41 @@
+name: Export source artifact on request
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  export:
+    if: contains(github.event.issue.title, '[SOURCE ARTIFACT]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Build clean source snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/export
+          tar \
+            --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='*.db' \
+            -czf /tmp/export/navish-site-source.tar.gz .
+          sha256sum /tmp/export/navish-site-source.tar.gz > /tmp/export/navish-site-source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: navish-site-source
+          path: /tmp/export/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Publish run identifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Source artifact ready. Workflow run ID: ${{ github.run_id }}"
