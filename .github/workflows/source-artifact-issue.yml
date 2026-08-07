@@ -54,7 +54,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .repair/repair.patch.gz.b64.part-* | base64 --decode | gzip --decompress --stdout > /tmp/useful-role-workspace.patch
+          cat \
+            .repair/repair.patch.gz.b64.part-00 \
+            .repair/repair.patch.gz.b64.part-01 \
+            .repair/p2-00 .repair/p2-01 .repair/p2-02 .repair/p2-03 \
+            .repair/p2-04 .repair/p2-05 .repair/p2-06 .repair/p2-07 \
+            .repair/p2-08 .repair/p2-09 .repair/p2-10 .repair/p2-11 \
+            .repair/repair.patch.gz.b64.part-03 \
+            > /tmp/useful-role-workspace.b64
+          echo '54818e9720335da90019905d8a90affc44029ce8e324036877878750a346eb7f  /tmp/useful-role-workspace.b64' | sha256sum --check
+          base64 --decode /tmp/useful-role-workspace.b64 > /tmp/useful-role-workspace.patch.gz
+          echo '659b74c8dd61f4dc2f9b5a3f3cc1a56ee86f98593b5a0327d27a274fa820464b  /tmp/useful-role-workspace.patch.gz' | sha256sum --check
+          gzip --decompress --stdout /tmp/useful-role-workspace.patch.gz > /tmp/useful-role-workspace.patch
+          echo '1c0d3b0037889b88af1e70d9f5c991d3499722fe33dae28311c002547290ecd2  /tmp/useful-role-workspace.patch' | sha256sum --check
           git apply --check /tmp/useful-role-workspace.patch
           git apply /tmp/useful-role-workspace.patch
           rm -rf .repair .repair-bootstrap
