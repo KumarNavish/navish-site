@@ -1,0 +1,17 @@
+{
+  "name": "Swiss Career Intelligence",
+  "short_name": "Career",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "description": "A private, evidence-bounded Swiss hiring workspace.",
+  "icons": [
+    {
+      "src": "/assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
