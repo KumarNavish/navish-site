@@ -1,0 +1,68 @@
+name: Apply hiring clarity v12
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: apply-hiring-clarity-v12
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event.issue.user.login == 'KumarNavish' && contains(github.event.issue.title, '[APPLY HIRING CLARITY V12]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/hiring-clarity-v12
+          fetch-depth: 0
+
+      - name: Apply checksum-bound clarity repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .repair-clarity12/hiring-clarity-v12.patch.gz.b64 /tmp/hiring-clarity-v12.patch.gz.b64
+          echo '3a9d07e76da129f9d56a84dd802fddf31a12a34130eabd8f56da6261f16888d7  /tmp/hiring-clarity-v12.patch.gz.b64' | sha256sum --check
+          base64 --decode /tmp/hiring-clarity-v12.patch.gz.b64 > /tmp/hiring-clarity-v12.patch.gz
+          echo '6615f12108ea008f51a91edf609b60f9a79a52dc9e644e9747c172b05f632430  /tmp/hiring-clarity-v12.patch.gz' | sha256sum --check
+          gzip --decompress --stdout /tmp/hiring-clarity-v12.patch.gz > /tmp/hiring-clarity-v12.patch
+          echo '59ad64a68bae5e58aeb9e898ddce9dbffee3564f542e7bfa4369811430eea5ea  /tmp/hiring-clarity-v12.patch' | sha256sum --check
+          git apply --check /tmp/hiring-clarity-v12.patch
+          git apply /tmp/hiring-clarity-v12.patch
+          rm -rf .repair-clarity12
+
+      - name: Verify product source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q app app.py scripts tests
+          for file in static/*.js; do node --check "$file"; done
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          pytest -q
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          rm -rf .pytest_cache
+
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence UX'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/hosted_browser_acceptance.py static/index.html static/personal-workspace.js static/workspace-access.js static/workspace-detail.js static/workspace-white.css tests/e2e_live.py tests/test_personal_workspace_ui.py
+          git add -u .repair-clarity12 || true
+          git commit -m 'Make every screen answer the next hiring question'
+          git push origin HEAD:ux/hiring-clarity-v12
+
+      - name: Publish result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Hiring clarity v12 application result: ${{ job.status }}. Workflow run ID: ${{ github.run_id }}."
