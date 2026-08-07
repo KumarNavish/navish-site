@@ -27,7 +27,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tr -d '\r\n' < .repair-clarity12/hiring-clarity-v12.patch.gz.b64 | base64 --decode > /tmp/hiring-clarity-v12.patch.gz
+          cat .repair-clarity12/part-* > /tmp/hiring-clarity-v12.patch.gz.b64
+          echo '3a9d07e76da129f9d56a84dd802fddf31a12a34130eabd8f56da6261f16888d7  /tmp/hiring-clarity-v12.patch.gz.b64' | sha256sum --check
+          base64 --decode /tmp/hiring-clarity-v12.patch.gz.b64 > /tmp/hiring-clarity-v12.patch.gz
           echo '6615f12108ea008f51a91edf609b60f9a79a52dc9e644e9747c172b05f632430  /tmp/hiring-clarity-v12.patch.gz' | sha256sum --check
           gzip --decompress --stdout /tmp/hiring-clarity-v12.patch.gz > /tmp/hiring-clarity-v12.patch
           echo '59ad64a68bae5e58aeb9e898ddce9dbffee3564f542e7bfa4369811430eea5ea  /tmp/hiring-clarity-v12.patch' | sha256sum --check
