@@ -25,7 +25,7 @@
     revealApplicationShell();
     const script = document.createElement("script");
     script.type = "module";
-    script.src = "/assets/personal-workspace.js?v=workspace9";
+    script.src = "/assets/personal-workspace.js?v=focus10";
     script.onerror = () => showPrivateLinkMessage("The private workspace could not be loaded. Refresh once.");
     document.body.appendChild(script);
   }

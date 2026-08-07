@@ -72,7 +72,7 @@ def assert_role_workspace(
     heading = page.locator(".detail-header h1")
     heading.wait_for()
     assert heading.inner_text() == ROLE_TITLE
-    expected_section = {"overview": "Overview", "application": "Application", "preparation": "Preparation"}[section]
+    expected_section = {"overview": "Role", "application": "Application", "preparation": "Practice"}[section]
     assert page.locator("#route-title").inner_text() == expected_section
     assert page.locator("#detail-drawer").is_hidden()
     assert page.locator(".detail-footer").count() == 0
@@ -200,6 +200,8 @@ def run() -> None:
 
         open_private(page)
         page.get_by_role("heading", name="Today", exact=True).wait_for()
+        assert page.locator(".page-header").is_hidden()
+        assert page.get_by_text("Do this now", exact=True).count() <= 1
         screenshot(page, "workspace-01-today-mobile-390.png")
         steps.append("Authenticated app shell became visible and Today rendered")
 
@@ -215,33 +217,35 @@ def run() -> None:
 
         role.click()
         page.get_by_role("button", name="← Opportunities").wait_for()
-        page.get_by_text("Why this employer may interview Navish", exact=True).wait_for()
+        page.get_by_text("You have a credible reason to be interviewed.", exact=True).wait_for()
         assert_role_workspace(page, job_id, "overview", "opportunities")
         assert page.get_by_text("Interview range", exact=True).count() == 0
         assert page.get_by_text("Offer after interview", exact=True).count() == 0
+        assert page.locator(".detail-summary-grid").count() == 0
+        assert page.locator(".decision-evidence").count() == 0
+        assert page.locator(".structured-list").count() == 0
+        assert page.get_by_text("What could stop an interview", exact=True).is_visible()
+        assert page.get_by_text("Next move", exact=True).is_visible()
         screenshot(page, "workspace-03-role-page-mobile-390.png")
         steps.append("Role opened with identity first, semantic navigation and no overlay")
 
-        page.get_by_role("button", name="Pursue", exact=True).click()
+        page.get_by_role("button", name="Pursue this role", exact=True).click()
         page.get_by_role("heading", name="Prepare this application?").wait_for()
         page.get_by_role("button", name="Prepare package").click()
-        ready_badge = page.locator(
-            '.object-page .status-badge:visible', has_text="Ready for review"
-        )
-        ready_badge.wait_for()
+        page.get_by_text("Three reasons this application is credible", exact=True).wait_for()
         assert_role_workspace(page, job_id, "application", "applications")
-        package_box = page.locator(".package-overview").bounding_box()
+        package_box = page.locator(".application-next").bounding_box()
         tracking_box = page.locator(".application-control-disclosure").bounding_box()
         assert package_box and tracking_box and package_box["y"] < tracking_box["y"]
-        page.get_by_role("button", name="Mark ready to apply", exact=True).click()
-        page.get_by_role("button", name="I submitted manually", exact=True).wait_for()
+        page.get_by_role("button", name="Mark ready", exact=True).click()
+        page.get_by_role("button", name="Record submission", exact=True).wait_for()
         assert page.locator("#detail-stage").input_value() == "Ready to apply"
         assert "Ready to apply" in page.locator(".application-control-disclosure summary small").inner_text()
         assert_role_workspace(page, job_id, "application", "applications")
         assert page.locator(".application-control-disclosure").is_visible()
-        page.get_by_text("Requirement-to-evidence map", exact=True).wait_for()
+        page.get_by_text("Evidence coverage", exact=True).wait_for()
         assert page.locator(".requirement-row.missing").count() == 0
-        page.get_by_text("Projects and publications", exact=True).click()
+        page.get_by_text("Evidence coverage", exact=True).click()
         page.get_by_text("CL-PLO", exact=True).wait_for()
         assert_toast_clears_mobile_navigation(page)
         wait_for_toast_to_clear(page)
@@ -264,6 +268,15 @@ def run() -> None:
         assert page.get_by_role("heading", name="Role", exact=True).count() == 0
         screenshot(page, "workspace-06-prepare-mobile-390.png")
         steps.append("Preparation remained attached to a named role; orphan rows were suppressed")
+
+        click_route(page, "today")
+        page.get_by_role("heading", name="Today", exact=True).wait_for()
+        page.locator(".hiring-focus").wait_for()
+        page.get_by_text("Do this now", exact=True).wait_for()
+        assert page.locator(".primary-move .button.primary").count() == 1
+        assert page.get_by_role("heading", name="Upcoming", exact=True).count() == 0
+        screenshot(page, "workspace-06b-today-action-mobile-390.png")
+        steps.append("Today returned to one primary hiring action after application preparation")
         context.close()
         browser.close()
 

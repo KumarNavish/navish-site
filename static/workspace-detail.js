@@ -7,9 +7,9 @@ import {
 } from "./ui.js";
 
 const TABS = [
-  ["overview", "Overview"],
+  ["overview", "Role"],
   ["application", "Application"],
-  ["preparation", "Prepare"],
+  ["preparation", "Practice"],
 ];
 
 const STAGES = [
@@ -23,6 +23,12 @@ function stageOptions(selected) {
 
 function value(input, fallback = "Unconfirmed") {
   return input === null || input === undefined || input === "" ? fallback : String(input);
+}
+function candidateCopy(input) {
+  return value(input, "")
+    .replace(/\bNavish(?:[’']s)\b/g, "your")
+    .replace(/\bhis\b/gi, "your")
+    .replace(/\bNavish\b/g, "you");
 }
 
 function formatMoney(amount) {
@@ -86,20 +92,21 @@ function drawerHeader(role, application, primaryAction, tab = "overview") {
   const invitation = value(role.interview_band, "Unconfirmed");
   const compensation = compensationView(role);
   const compact = tab !== "overview";
+  const deadline = application?.next_action_deadline ? formatDate(application.next_action_deadline, true) : "No deadline confirmed";
   return `<header class="detail-header ${compact ? "compact" : ""}">
     <div class="detail-title-row">
-      <div class="company-mark" aria-hidden="true">${escapeHtml((role.company || "?").slice(0, 2).toUpperCase())}</div>
-      <div class="detail-identity"><p class="detail-company">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p><h1>${escapeHtml(role.title)}</h1>${compact ? `<p class="detail-section-name">${escapeHtml(TABS.find(([id]) => id === tab)?.[1] || "Role workspace")}</p>` : ""}</div>
+      <div class="detail-identity">
+        <p class="detail-company">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p>
+        <h1>${escapeHtml(role.title)}</h1>
+        ${compact ? `<p class="detail-section-name">${escapeHtml(TABS.find(([id]) => id === tab)?.[1] || "Role")}</p>` : `<p class="decision-line"><strong>${escapeHtml(decision)}</strong><span>${escapeHtml(value(role.urgency, "Timing unconfirmed"))}</span></p>`}
+      </div>
       <div class="detail-header-action">${primaryAction}</div>
     </div>
-    ${compact ? "" : `<div class="role-signal-row" aria-label="Recommendation summary">
-      <div class="recommendation-line">${badge(decision, statusTone(decision))}${badge(`${invitation} invitation case`, statusTone(invitation))}</div>
-    </div>
-    <div class="detail-summary-grid" aria-label="Role summary">
-      <div><span>Stage</span><strong>${escapeHtml(stage)}</strong></div>
-      <div><span>Fit</span><strong>${escapeHtml(fitLabel(role.fit_score))}</strong></div>
-      <div><span>Compensation</span><strong>${escapeHtml(compensation.label)}</strong><small>${escapeHtml(compensation.basis)}</small></div>
-      <div><span>Next deadline</span><strong>${application?.next_action_deadline ? formatDate(application.next_action_deadline, true) : "Unconfirmed"}</strong></div>
+    ${compact ? `<div class="compact-role-state"><span>Stage: ${escapeHtml(stage)}</span><span>${deadline === "No deadline confirmed" ? escapeHtml(deadline) : `Due ${escapeHtml(deadline)}`}</span></div>` : `<div class="role-facts-line" aria-label="Role facts">
+      <span><strong>${escapeHtml(invitation)}</strong> interview case</span>
+      <span>${escapeHtml(compensation.label)}</span>
+      <span>Stage: ${escapeHtml(stage)}</span>
+      <span>${deadline === "No deadline confirmed" ? escapeHtml(deadline) : `Due ${escapeHtml(deadline)}`}</span>
     </div>`}
   </header>`;
 }
@@ -108,9 +115,11 @@ function evidenceDisclosure(role, application) {
   const matches = Array.isArray(role.strongest_matches) ? role.strongest_matches : [];
   const claims = Array.isArray(application?.package?.evidence_claims) ? application.package.evidence_claims : [];
   const count = matches.length + claims.length;
+  const officialUrl = safeExternalUrl(role.official_url);
   return `<details class="detail-disclosure evidence-disclosure">
-    <summary><span><strong>Evidence behind this recommendation</strong><small>${count ? `${count} source-linked record${count === 1 ? "" : "s"}` : "Evidence review required"}</small></span><span aria-hidden="true">+</span></summary>
+    <summary><span><strong>Evidence and source</strong><small>${count ? `${count} source-linked record${count === 1 ? "" : "s"}` : "Evidence review required"}</small></span><span aria-hidden="true">+</span></summary>
     <div class="disclosure-body">
+      <div class="source-note"><strong>${escapeHtml(value(role.source_status, "Source status unconfirmed"))}</strong><span>${role.last_verified_at ? `Verified ${escapeHtml(formatDate(role.last_verified_at, true))}` : "Current status not reverified"}</span>${officialUrl ? `<a class="inline-source-link" href="${escapeHtml(officialUrl)}" target="_blank" rel="noopener noreferrer">Open official listing ${icon("external", 13)}</a>` : ""}</div>
       ${matches.length ? `<div class="evidence-stack">${matches.map((match) => `<article><h4>${escapeHtml(match.requirement)}</h4><p>${escapeHtml(match.evidence)}</p><small>${escapeHtml(match.source)} · ${escapeHtml(match.strength)}</small></article>`).join("")}</div>` : `<p class="muted-copy">No direct match is strong enough to surface yet.</p>`}
       ${claims.length ? `<div class="evidence-stack application-claim-stack">${claims.map((claim) => `<article><h4>${escapeHtml(claim.evidence)}</h4><p>${escapeHtml(claim.text)}</p><small>${escapeHtml(claim.source)} · ${escapeHtml(claim.status)}</small></article>`).join("")}</div>` : ""}
     </div>
@@ -118,36 +127,24 @@ function evidenceDisclosure(role, application) {
 }
 
 function overviewTab(role, application) {
-  const compensation = compensationView(role);
-  const officialUrl = safeExternalUrl(role.official_url);
-  return `<div class="detail-section-grid">
-    <section class="detail-panel emphasis">
-      <div class="panel-label">Recommendation</div>
-      <h3>Why this employer may interview Navish</h3>
-      <p>${escapeHtml(role.why_interview)}</p>
-      <div class="decision-evidence">
-        <div><span>Invitation case</span><strong>${escapeHtml(value(role.interview_band))}</strong></div>
-        <div><span>Analysis confidence</span><strong>${escapeHtml(value(role.confidence))}</strong></div>
-        <div><span>Evidence basis</span><strong>${escapeHtml(evidenceBasis(role))}</strong></div>
-      </div>
+  const nextAction = application?.next_action || role.primary_strategy || "Review the role evidence and choose one action.";
+  const deadline = application?.next_action_deadline ? `Due ${formatDate(application.next_action_deadline, true)}` : value(role.urgency, "Timing unconfirmed");
+  return `<div class="role-decision-flow">
+    <section class="decision-story">
+      <p class="section-kicker">Why this can work</p>
+      <h2>You have a credible reason to be interviewed.</h2>
+      <p>${escapeHtml(candidateCopy(role.why_interview))}</p>
     </section>
-    <section class="detail-panel risk-panel">
-      <div class="panel-label">Primary risk</div>
-      <h3>${icon("alert", 18)} Largest screening blocker</h3>
-      <p>${escapeHtml(role.blocker)}</p>
-      <div class="structured-answer"><strong>Fastest truthful correction</strong><span>${escapeHtml(role.fastest_correction)}</span></div>
+    <section class="screening-risk">
+      <p class="section-kicker">What could stop an interview</p>
+      <h2>${escapeHtml(value(role.blocker, "No material blocker recorded."))}</h2>
+      <p class="risk-correction"><strong>Reduce the risk:</strong> ${escapeHtml(value(role.fastest_correction, "Confirm the missing evidence before applying."))}</p>
     </section>
-  </div>
-  <section class="detail-panel compact-panel">
-    <div class="structured-list">
-      <div><span>Primary strategy</span><strong>${escapeHtml(role.primary_strategy)}</strong></div>
-      <div><span>Urgency</span><strong>${escapeHtml(role.urgency)}</strong></div>
-      <div><span>Compensation</span><strong>${escapeHtml(compensation.label)}</strong><small>${escapeHtml(compensation.confidence)}</small></div>
-      <div><span>Source</span><strong>${escapeHtml(role.source_status)}</strong><small>${role.last_verified_at ? `Last verified ${formatDate(role.last_verified_at, true)}` : "Current status not reverified"}</small>${officialUrl ? `<a class="inline-source-link" href="${escapeHtml(officialUrl)}" target="_blank" rel="noopener noreferrer">Open official listing ${icon("external", 13)}</a>` : ""}</div>
-    </div>
-  </section>
-  ${application ? `<section class="detail-panel"><div class="panel-heading"><div><div class="panel-label">Current work</div><h3>Next recommended action</h3></div>${application.overdue ? badge("Overdue", "negative") : application.inactive ? badge(`${application.inactive_days} days inactive`, "warning") : ""}</div><p>${escapeHtml(application.next_action)}</p></section>` : ""}
-  <div class="support-disclosures overview-support">${evidenceDisclosure(role, application)}</div>`;
+    <section class="next-move-block">
+      <div><p class="section-kicker">Next move</p><h2>${escapeHtml(nextAction)}</h2><p>${escapeHtml(deadline)}</p></div>
+    </section>
+    ${evidenceDisclosure(role, application)}
+  </div>`;
 }
 
 function applicationSupport(role, application, contacts) {
@@ -160,40 +157,26 @@ function applicationSupport(role, application, contacts) {
   const responses = Array.isArray(pkg.truthful_responses) ? pkg.truthful_responses : [];
   const checklist = Array.isArray(pkg.submission_checklist) ? pkg.submission_checklist : [];
   const roleContacts = contacts.filter((contact) => contact.job_id === role.id || (!contact.job_id && contact.company === role.company));
-  return `<div class="support-disclosures">
+  return `<div class="support-disclosures application-details">
     <details class="detail-disclosure">
-      <summary><span><strong>Requirement-to-evidence map</strong><small>${matrix.length ? `${matrix.length} requirement${matrix.length === 1 ? "" : "s"} checked` : "Evidence map unavailable"}</small></span><span aria-hidden="true">+</span></summary>
+      <summary><span><strong>Evidence coverage</strong><small>${matrix.length ? `${matrix.length} requirements checked` : "Evidence map unavailable"}</small></span><span aria-hidden="true">+</span></summary>
       <div class="disclosure-body">
         ${matrix.length ? `<div class="requirement-map">${matrix.map((item) => `<article class="requirement-row ${String(item.strength).includes("missing") ? "missing" : ""}"><div><h4>${escapeHtml(item.requirement)}</h4><p>${escapeHtml(item.evidence)}</p><small>${escapeHtml(item.source)}</small></div><span class="requirement-strength">${escapeHtml(item.strength)}</span></article>`).join("")}</div>` : `<p class="muted-copy">No requirement map is available yet.</p>`}
+        <div class="selection-columns compact-selections"><div><h4>Projects</h4>${projects.length ? `<ol>${projects.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : `<p class="muted-copy">No project selected.</p>`}</div><div><h4>Publications</h4>${publications.length ? `<ol>${publications.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : `<p class="muted-copy">No publication selected.</p>`}</div></div>
       </div>
     </details>
     <details class="detail-disclosure">
-      <summary><span><strong>Application messages</strong><small>Résumé positioning, recruiter pitch, and hiring-manager note</small></span><span aria-hidden="true">+</span></summary>
-      <div class="disclosure-body">
-        ${application.package_ready ? `<div class="asset-list">
-          <article class="asset-row"><div>${icon("file", 18)}</div><div><h4>Role-specific résumé positioning</h4><p>${escapeHtml(pkg.professional_summary || pkg.headline || "Tailored résumé package")}</p></div>${button("Copy", { tone: "secondary", compact: true, attrs: 'data-copy-package="summary"' })}</article>
-          <article class="asset-row"><div>${icon("message", 18)}</div><div><h4>Recruiter pitch</h4><p>${escapeHtml(pkg.recruiter_pitch || "Not yet prepared")}</p></div>${button("Copy", { tone: "secondary", compact: true, attrs: 'data-copy-package="recruiter"' })}</article>
-          <article class="asset-row"><div>${icon("message", 18)}</div><div><h4>Hiring-manager note</h4><p>${escapeHtml(pkg.hiring_manager_note || "Not yet prepared")}</p></div>${button("Copy", { tone: "secondary", compact: true, attrs: 'data-copy-package="manager"' })}</article>
-        </div>` : `<p class="muted-copy">Documents are created only after Pursue.</p>`}
+      <summary><span><strong>Messages</strong><small>Recruiter and hiring-manager versions</small></span><span aria-hidden="true">+</span></summary>
+      <div class="disclosure-body asset-list">
+        <article class="asset-row"><div>${icon("message", 18)}</div><div><h4>Recruiter pitch</h4><p>${escapeHtml(pkg.recruiter_pitch || "Not yet prepared")}</p></div>${button("Copy", { tone: "secondary", compact: true, attrs: 'data-copy-package="recruiter"' })}</article>
+        <article class="asset-row"><div>${icon("message", 18)}</div><div><h4>Hiring-manager note</h4><p>${escapeHtml(pkg.hiring_manager_note || "Not yet prepared")}</p></div>${button("Copy", { tone: "secondary", compact: true, attrs: 'data-copy-package="manager"' })}</article>
       </div>
     </details>
     <details class="detail-disclosure">
-      <summary><span><strong>Projects and publications</strong><small>${projects.length + publications.length ? `${projects.length} project${projects.length === 1 ? "" : "s"} · ${publications.length} publication${publications.length === 1 ? "" : "s"}` : "Selection unavailable"}</small></span><span aria-hidden="true">+</span></summary>
-      <div class="disclosure-body selection-columns">
-        <div><h4>Projects to emphasize</h4>${projects.length ? `<ol>${projects.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : `<p class="muted-copy">No project is sufficiently relevant yet.</p>`}</div>
-        <div><h4>Publications to emphasize</h4>${publications.length ? `<ol>${publications.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : `<p class="muted-copy">No publication was selected.</p>`}</div>
-      </div>
-    </details>
-    <details class="detail-disclosure">
-      <summary><span><strong>Screening risks and truthful responses</strong><small>${objections.length ? `${objections.length} likely objection${objections.length === 1 ? "" : "s"}` : "No objection model available"}</small></span><span aria-hidden="true">+</span></summary>
+      <summary><span><strong>Risks and final checks</strong><small>${objections.length ? `${objections.length} likely screening objection${objections.length === 1 ? "" : "s"}` : "Manual review required"}</small></span><span aria-hidden="true">+</span></summary>
       <div class="disclosure-body objection-list">
         ${objections.length ? objections.map((objection, index) => `<article><h4>${escapeHtml(objection)}</h4><p>${escapeHtml(responses[index] || responses[0] || "Answer with the exact evidence boundary and do not overclaim.")}</p></article>`).join("") : `<p class="muted-copy">No screening objection is recorded.</p>`}
-        ${pkg.prohibited_claims?.length ? `<div class="claim-boundary"><h4>Claims the package must not make</h4><ul>${pkg.prohibited_claims.map((claim) => `<li>${escapeHtml(claim)}</li>`).join("")}</ul></div>` : ""}
-      </div>
-    </details>
-    <details class="detail-disclosure">
-      <summary><span><strong>Submission and compensation check</strong><small>Final manual review before any external action</small></span><span aria-hidden="true">+</span></summary>
-      <div class="disclosure-body">
+        ${pkg.prohibited_claims?.length ? `<div class="claim-boundary"><h4>Do not claim</h4><ul>${pkg.prohibited_claims.map((claim) => `<li>${escapeHtml(claim)}</li>`).join("")}</ul></div>` : ""}
         ${pkg.compensation_positioning ? `<p class="package-note"><strong>Compensation position</strong>${escapeHtml(pkg.compensation_positioning)}</p>` : ""}
         ${pkg.referral_recommendation ? `<p class="package-note"><strong>Referral decision</strong>${escapeHtml(pkg.referral_recommendation)}</p>` : ""}
         ${pkg.cover_note ? `<p class="package-note"><strong>Cover-letter decision</strong>${escapeHtml(pkg.cover_note)}</p>` : ""}
@@ -201,17 +184,11 @@ function applicationSupport(role, application, contacts) {
       </div>
     </details>
     <details class="detail-disclosure">
-      <summary><span><strong>Relevant contacts</strong><small>${roleContacts.length ? `${roleContacts.length} verified path${roleContacts.length === 1 ? "" : "s"}` : "No verified contact path yet"}</small></span><span aria-hidden="true">+</span></summary>
+      <summary><span><strong>Contacts and history</strong><small>${roleContacts.length ? `${roleContacts.length} verified contact path${roleContacts.length === 1 ? "" : "s"}` : "No verified contact path"}</small></span><span aria-hidden="true">+</span></summary>
       <div class="disclosure-body">
-        <div class="support-action">${button("Add verified contact", { tone: "secondary", compact: true, attrs: `data-add-contact="${role.id}"` })}</div>
-        ${roleContacts.length ? `<div class="contact-list">${roleContacts.map((contact) => `<article class="contact-row"><div class="contact-avatar">${escapeHtml(contact.name.slice(0, 2).toUpperCase())}</div><div><h4>${escapeHtml(contact.name)}</h4><p>${escapeHtml(contact.role || "Role unconfirmed")} · ${escapeHtml(contact.relationship)}</p><small>${escapeHtml(contact.source || "Source unconfirmed")}</small></div></article>`).join("")}</div>` : `<p class="muted-copy">Add only a person supported by a credible source. The system never contacts anyone automatically.</p>`}
-      </div>
-    </details>
-    <details class="detail-disclosure">
-      <summary><span><strong>Application history</strong><small>${application.timeline?.length ? `${application.timeline.length} verified event${application.timeline.length === 1 ? "" : "s"}` : "No activity recorded"}</small></span><span aria-hidden="true">+</span></summary>
-      <div class="disclosure-body">
-        <div class="support-action">${button("Add verified activity", { tone: "secondary", iconName: "plus", compact: true, attrs: `data-add-activity="${application.id}"` })}</div>
-        ${application.timeline?.length ? `<div class="timeline-list">${application.timeline.map((event) => `<article class="timeline-item"><div class="timeline-node"></div><div><h4>${escapeHtml(event.summary)}</h4><p>${escapeHtml(event.kind.replaceAll("_", " "))}</p><small>${formatDate(event.occurred_at, true)} · ${formatRelative(event.occurred_at)}</small></div></article>`).join("")}</div>` : `<p class="muted-copy">Add only verified interactions and decisions.</p>`}
+        <div class="support-action">${button("Add verified contact", { tone: "secondary", compact: true, attrs: `data-add-contact="${role.id}"` })}${button("Add activity", { tone: "secondary", compact: true, attrs: `data-add-activity="${application.id}"` })}</div>
+        ${roleContacts.length ? `<div class="contact-list">${roleContacts.map((contact) => `<article class="contact-row"><div class="contact-avatar">${escapeHtml(contact.name.slice(0, 2).toUpperCase())}</div><div><h4>${escapeHtml(contact.name)}</h4><p>${escapeHtml(contact.role || "Role unconfirmed")} · ${escapeHtml(contact.relationship)}</p><small>${escapeHtml(contact.source || "Source unconfirmed")}</small></div></article>`).join("")}</div>` : `<p class="muted-copy">No verified contact is attached. The system never contacts anyone automatically.</p>`}
+        ${application.timeline?.length ? `<div class="timeline-list compact-timeline">${application.timeline.map((event) => `<article class="timeline-item"><div class="timeline-node"></div><div><h4>${escapeHtml(event.summary)}</h4><p>${escapeHtml(event.kind.replaceAll("_", " "))}</p><small>${formatDate(event.occurred_at, true)} · ${formatRelative(event.occurred_at)}</small></div></article>`).join("")}</div>` : ""}
       </div>
     </details>
   </div>`;
@@ -219,52 +196,36 @@ function applicationSupport(role, application, contacts) {
 
 function applicationTab(role, application, contacts) {
   if (!application) {
-    return `<div class="drawer-empty"><h3>This role is not yet tracked.</h3><p>Select Pursue to create one canonical application workspace, evidence-linked package, and role-specific preparation plan.</p>${button("Pursue role", { attrs: `data-pursue-role="${role.id}"` })}</div>`;
+    return `<div class="drawer-empty"><h2>Prepare the application only if this role is worth pursuing.</h2><p>This creates one evidence-linked package and a role-specific practice plan. It never submits or contacts anyone.</p>${button("Pursue this role", { attrs: `data-pursue-role="${role.id}"` })}</div>`;
   }
   const pkg = application.package || {};
-  const reasons = Array.isArray(pkg.top_reasons) ? pkg.top_reasons : [];
-  const deadline = application.next_action_deadline
-    ? formatDate(application.next_action_deadline, true)
-    : "No deadline confirmed";
+  const reasons = Array.isArray(pkg.top_reasons) ? pkg.top_reasons.slice(0, 3) : [];
+  const prohibited = Array.isArray(pkg.prohibited_claims) ? pkg.prohibited_claims : [];
+  const deadline = application.next_action_deadline ? formatDate(application.next_action_deadline, true) : "No deadline confirmed";
   const trackingSummary = `${application.state} · ${deadline}`;
-  return `<section class="detail-panel package-overview">
-    <div class="panel-heading"><div><div class="panel-label">Application package</div><h3>${escapeHtml(pkg.headline || "Not prepared")}</h3></div>${badge(application.package_ready ? "Ready for review" : "Created after Pursue", application.package_ready ? "positive" : "warning")}</div>
-    ${application.package_ready
-      ? `<p class="package-summary">${escapeHtml(pkg.professional_summary || "")}</p>
-         ${reasons.length ? `<ol class="fit-reason-list">${reasons.slice(0, 3).map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ol>` : ""}
-         <div class="next-action-summary"><div><span>Next action</span><strong>${escapeHtml(application.next_action)}</strong></div><div><span>Deadline</span><strong>${escapeHtml(deadline)}</strong></div></div>`
-      : `<p>The system will generate an evidence-linked package only after Pursue.</p>${button("Pursue and prepare", { attrs: `data-pursue-role="${role.id}"`, compact: true })}`}
-  </section>
-  ${applicationSupport(role, application, contacts)}
-  <details class="detail-disclosure application-control-disclosure">
-    <summary><span><strong>Application tracking</strong><small>${escapeHtml(trackingSummary)}</small></span><span aria-hidden="true">+</span></summary>
-    <div class="disclosure-body application-control-body">
-      <div class="detail-section-grid application-control-grid">
-        <section class="detail-panel">
-          <div class="panel-heading"><div><div class="panel-label">Pipeline</div><h3>Application state</h3></div>${badge(application.manual_submission_status, application.state === "Applied" ? "positive" : "neutral")}</div>
-          <label class="field-label" for="detail-stage">Stage</label>
-          <select id="detail-stage" class="control-select">${stageOptions(application.state)}</select>
-          <div class="stage-metadata"><span>${application.stage_age_days} days in stage</span><span>Last activity ${formatRelative(application.last_activity_at)}</span></div>
-        </section>
-        <section class="detail-panel">
-          <div class="panel-label">Action control</div>
-          <h3>Edit next action</h3>
-          <form id="detail-action-form" class="compact-form">
-            <label class="field-label" for="detail-next-action">Action</label>
-            <textarea id="detail-next-action" rows="3">${escapeHtml(application.next_action)}</textarea>
-            <label class="field-label" for="detail-action-deadline">Deadline</label>
-            <input id="detail-action-deadline" type="datetime-local" value="${dateTimeLocalValue(application.next_action_deadline)}">
-            ${button("Save next action", { attrs: 'type="submit"', compact: true })}
-          </form>
-        </section>
-      </div>
-    </div>
-  </details>`;
+  return `<div class="application-flow">
+    <section class="application-next">
+      <p class="section-kicker">Next move</p>
+      <h2>${escapeHtml(application.next_action)}</h2>
+      <p>${escapeHtml(application.state)} · ${escapeHtml(deadline)}</p>
+    </section>
+    ${application.package_ready ? `<section class="application-lead"><p class="section-kicker">Lead with</p><h2>Three reasons this application is credible</h2>${reasons.length ? `<ol class="fit-reason-list">${reasons.map((reason) => `<li>${escapeHtml(candidateCopy(reason))}</li>`).join("")}</ol>` : `<p class="muted-copy">No evidence-supported reasons are available yet.</p>`}</section>
+      <section class="application-positioning"><div class="section-heading-inline"><div><p class="section-kicker">Tailored positioning</p><h2>${escapeHtml(pkg.headline || "Role-specific profile")}</h2></div>${button("Copy", { tone: "secondary", compact: true, attrs: 'data-copy-package="summary"' })}</div><p>${escapeHtml(pkg.professional_summary || "")}</p></section>
+      ${prohibited.length ? `<section class="truth-boundary"><p class="section-kicker">Keep it honest</p><h2>Do not overclaim.</h2><p>${escapeHtml(prohibited[0])}${prohibited.length > 1 ? ` <span>${escapeHtml(`+${prohibited.length - 1} more in final checks`)}</span>` : ""}</p></section>` : ""}` : `<section class="application-positioning"><h2>Package not ready.</h2><p>The evidence-linked package is generated after Pursue.</p></section>`}
+    ${applicationSupport(role, application, contacts)}
+    <details class="detail-disclosure application-control-disclosure">
+      <summary><span><strong>Application tracking</strong><small>${escapeHtml(trackingSummary)}</small></span><span aria-hidden="true">+</span></summary>
+      <div class="disclosure-body application-control-body"><div class="detail-section-grid application-control-grid">
+        <section class="detail-panel"><h3>Stage</h3><select id="detail-stage" class="control-select" aria-label="Application stage">${stageOptions(application.state)}</select><div class="stage-metadata"><span>${application.stage_age_days} days in stage</span><span>Last activity ${formatRelative(application.last_activity_at)}</span></div></section>
+        <section class="detail-panel"><h3>Edit next action</h3><form id="detail-action-form" class="compact-form"><label class="field-label" for="detail-next-action">Action</label><textarea id="detail-next-action" rows="3">${escapeHtml(application.next_action)}</textarea><label class="field-label" for="detail-action-deadline">Deadline</label><input id="detail-action-deadline" type="datetime-local" value="${dateTimeLocalValue(application.next_action_deadline)}">${button("Save", { attrs: 'type="submit"', compact: true })}</form></section>
+      </div></div>
+    </details>
+  </div>`;
 }
 
 function preparationTab(role, application, sessions) {
   if (!sessions.length) {
-    return `<div class="drawer-empty"><h3>No preparation session is scheduled yet.</h3><p>Preparation is created from the actual role requirements after Pursue.</p>${application ? button("Open application", { tone: "secondary", attrs: 'data-detail-tab="application"' }) : ""}</div>`;
+    return `<div class="drawer-empty"><h2>No role-specific practice is due.</h2><p>Practice is created only after Pursue and remains tied to this role.</p>${application ? button("Open application", { tone: "secondary", attrs: 'data-detail-tab="application"' }) : ""}</div>`;
   }
   const ordered = [...sessions].sort((a, b) => {
     if (Boolean(a.complete) !== Boolean(b.complete)) return a.complete ? 1 : -1;
@@ -274,21 +235,17 @@ function preparationTab(role, application, sessions) {
   const percentage = Math.round((complete / sessions.length) * 100);
   const next = ordered.find((session) => !session.complete) || ordered[0];
   const remaining = ordered.filter((session) => session.id !== next.id);
-  return `<section class="detail-panel next-session-panel">
-    <div class="panel-heading"><div><div class="panel-label">Next session</div><h3>${escapeHtml(next.competency)}</h3></div>${next.complete ? badge("Complete", "positive") : badge(`${next.duration} min`, "neutral")}</div>
-    <p class="next-session-prompt">${escapeHtml(next.prompt)}</p>
-    <div class="next-session-meta"><span>${next.due_at ? `Due ${escapeHtml(formatDate(next.due_at, true))}` : "No deadline"}</span><span>${next.due_at ? escapeHtml(formatRelative(next.due_at)) : ""}</span></div>
-    ${next.complete ? "" : `<div class="inline-actions">${button("Mark session complete", { tone: "primary", compact: true, attrs: `data-complete-session="${next.id}"` })}</div>`}
-  </section>
-  <section class="detail-panel readiness-panel">
-    <div class="panel-heading"><div><div class="panel-label">Readiness</div><h3>${complete} of ${sessions.length} sessions complete</h3></div><strong class="score-value">${percentage}%</strong></div>
-    ${progress(percentage, `${percentage}% complete`)}
-  </section>
-  ${remaining.length ? `<div class="session-list remaining-sessions">${remaining.map((session) => `<article class="session-row ${session.complete ? "complete" : ""}">
-    <div class="session-state">${session.complete ? icon("check", 17) : icon("clock", 17)}</div>
-    <div><h4>${escapeHtml(session.competency)}</h4><p>${escapeHtml(session.prompt)}</p><small>${session.duration} min · ${session.due_at ? `due ${formatDate(session.due_at, true)}` : "no deadline"}</small></div>
-    ${session.complete ? badge("Complete", "positive") : button("Mark complete", { tone: "secondary", compact: true, attrs: `data-complete-session="${session.id}"` })}
-  </article>`).join("")}</div>` : ""}`;
+  return `<div class="practice-flow">
+    <section class="practice-focus">
+      <p class="section-kicker">Next session · ${escapeHtml(String(next.duration))} min</p>
+      <h2>${escapeHtml(next.competency)}</h2>
+      <p class="next-session-prompt">${escapeHtml(next.prompt)}</p>
+      <div class="next-session-meta"><span>${next.due_at ? `Due ${escapeHtml(formatDate(next.due_at, true))}` : "No deadline"}</span><span>${next.due_at ? escapeHtml(formatRelative(next.due_at)) : ""}</span></div>
+      ${next.complete ? `<p class="completion-note">This session is complete.</p>` : `<div class="inline-actions">${button("Mark complete", { tone: "primary", compact: true, attrs: `data-complete-session="${next.id}"` })}</div>`}
+    </section>
+    <section class="practice-progress"><div><strong>${complete} of ${sessions.length} sessions complete</strong><span>Only role-relevant practice is scheduled.</span></div>${progress(percentage, `${percentage}% complete`)}</section>
+    ${remaining.length ? `<details class="detail-disclosure remaining-session-disclosure"><summary><span><strong>Remaining sessions</strong><small>${remaining.length} session${remaining.length === 1 ? "" : "s"}</small></span><span aria-hidden="true">+</span></summary><div class="disclosure-body session-list remaining-sessions">${remaining.map((session) => `<article class="session-row ${session.complete ? "complete" : ""}"><div class="session-state">${session.complete ? icon("check", 17) : icon("clock", 17)}</div><div><h4>${escapeHtml(session.competency)}</h4><p>${escapeHtml(session.prompt)}</p><small>${session.duration} min · ${session.due_at ? `due ${formatDate(session.due_at, true)}` : "no deadline"}</small></div>${session.complete ? `<span class="plain-state">Complete</span>` : button("Complete", { tone: "secondary", compact: true, attrs: `data-complete-session="${session.id}"` })}</article>`).join("")}</div></details>` : ""}
+  </div>`;
 }
 
 function contactsTab(role, application, contacts) {
@@ -405,16 +362,16 @@ export async function openRoleWorkspace(
     state.detail.tab = nextTab;
     root.dataset.section = nextTab;
     const primaryAction = !application?.package_ready
-      ? button("Pursue", { attrs: `data-pursue-role="${role.id}"` })
+      ? button("Pursue this role", { attrs: `data-pursue-role="${role.id}"` })
       : nextTab === "application"
         ? application.state === "Preparing"
-          ? button("Mark ready to apply", { attrs: `data-mark-ready="${application.id}"` })
+          ? button("Mark ready", { attrs: `data-mark-ready="${application.id}"` })
           : application.state === "Ready to apply"
-            ? button("I submitted manually", { attrs: `data-confirm-submitted="${application.id}"` })
-            : button("Open preparation", { attrs: 'data-detail-tab="preparation"' })
+            ? button("Record submission", { attrs: `data-confirm-submitted="${application.id}"` })
+            : button("Open practice", { attrs: 'data-detail-tab="preparation"' })
         : nextTab === "preparation"
-          ? button("Review application", { attrs: 'data-detail-tab="application"' })
-          : button("Review application", { attrs: 'data-detail-tab="application"' });
+          ? button("Open application", { attrs: 'data-detail-tab="application"' })
+          : button("Open application", { attrs: 'data-detail-tab="application"' });
 
     root.innerHTML = `${drawerHeader(role, application, primaryAction, nextTab)}
       <nav class="detail-tabs" aria-label="Role workspace sections">${TABS.map(([id, label]) => `<button type="button" class="detail-tab ${id === nextTab ? "active" : ""}" data-detail-tab="${id}" aria-selected="${id === nextTab}">${escapeHtml(label)}</button>`).join("")}</nav>
