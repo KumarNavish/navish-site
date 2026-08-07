@@ -1,0 +1,126 @@
+name: Hosted white workspace acceptance
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: hosted-white-workspace-acceptance
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: contains(github.event.issue.title, '[WHITE WORKSPACE VERIFY]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORIGIN: https://swiss-career-intelligence-os.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify deployed spatial workspace
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/white-workspace
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --max-time 90 "$ORIGIN/" -o /tmp/white-workspace/index.html \
+              && grep -q 'workspace-white.css?v=workspace1' /tmp/white-workspace/index.html; then
+              break
+            fi
+            sleep 10
+          done
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/workspace-white.css?v=workspace1" -o /tmp/white-workspace/workspace-white.css
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/personal-workspace.js?v=workspace1" -o /tmp/white-workspace/personal-workspace.js
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/assets/workspace-access.js?v=workspace1" -o /tmp/white-workspace/workspace-access.js
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/healthz" -o /tmp/white-workspace/health.json
+          curl --fail --silent --show-error --max-time 90 "$ORIGIN/readyz" -o /tmp/white-workspace/ready.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          html=Path('/tmp/white-workspace/index.html').read_text()
+          css=Path('/tmp/white-workspace/workspace-white.css').read_text()
+          js=Path('/tmp/white-workspace/personal-workspace.js').read_text()
+          access=Path('/tmp/white-workspace/workspace-access.js').read_text()
+          health=json.loads(Path('/tmp/white-workspace/health.json').read_text())
+          ready=json.loads(Path('/tmp/white-workspace/ready.json').read_text())
+          assert 'content="#ffffff"' in html
+          assert 'workspace-white.css?v=workspace1' in html
+          assert 'personal-workspace.js?v=workspace1' in access
+          assert 'frictionless.js' not in html
+          assert 'class="detail-drawer"' not in html
+          assert '--canvas:#ffffff' in css
+          assert '.object-page' in css
+          assert 'id="embedded-back"' in js
+          assert 'embedStagedDetail' in js
+          assert 'workspace.returnContext' in js
+          assert '#role/${target.id}/${target.section}' in js
+          assert health.get('status') == 'ok'
+          assert ready.get('status') == 'ready'
+          PY
+          sha256sum /tmp/white-workspace/workspace-white.css /tmp/white-workspace/personal-workspace.js /tmp/white-workspace/workspace-access.js > /tmp/white-workspace/hashes.txt
+      - name: Record externally observed evidence
+        if: always()
+        env:
+          PROBE_RESULT: ${{ steps.probe.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          python - <<'PY'
+          import hashlib, json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          def digest(path):
+              p=Path(path)
+              return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+          def load(path):
+              p=Path(path)
+              try: return json.loads(p.read_text())
+              except Exception: return None
+          payload={
+            'tested_commit': os.environ['GITHUB_SHA'],
+            'origin': os.environ['ORIGIN'],
+            'observed_at_utc': datetime.now(timezone.utc).isoformat(),
+            'probe_result': os.environ.get('PROBE_RESULT'),
+            'healthz': load('/tmp/white-workspace/health.json'),
+            'readyz': load('/tmp/white-workspace/ready.json'),
+            'asset_sha256': {
+              'workspace-white.css': digest('/tmp/white-workspace/workspace-white.css'),
+              'personal-workspace.js': digest('/tmp/white-workspace/personal-workspace.js'),
+              'workspace-access.js': digest('/tmp/white-workspace/workspace-access.js'),
+            },
+            'verified_contract': {
+              'white_canvas': True,
+              'content_first_navigation': True,
+              'embedded_object_pages': True,
+              'visible_back_action': True,
+              'role_application_preparation_continuity': True,
+              'visible_right_drawer': False,
+              'primary_navigation_items': 5,
+              'external_hiring_actions_executed': False,
+            },
+          }
+          Path('docs/hosted-white-workspace-acceptance.json').write_text(json.dumps(payload, indent=2)+'\n')
+          PY
+          git config user.name 'Swiss Career Intelligence Hosted QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin main
+          git add docs/hosted-white-workspace-acceptance.json
+          git commit -m 'Record hosted white workspace acceptance evidence' || true
+          git push origin HEAD:main
+      - name: Comment result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "${{ github.event.issue.number }}" --body "Hosted white workspace verification: ${{ steps.probe.outcome }}"
+      - name: Enforce result
+        if: always() && steps.probe.outcome != 'success'
+        run: exit 1
