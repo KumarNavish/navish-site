@@ -11,10 +11,21 @@
     auth.innerHTML = `<div class="auth-card"><div class="brand"><div class="mark">N</div><div><h1>Swiss Career Intelligence</h1><p>Private hiring workspace</p></div></div><div class="notice info"><strong>Private access</strong><p>${message}</p></div></div>`;
   }
 
+  function revealApplicationShell() {
+    const app = document.querySelector("#app");
+    const auth = document.querySelector("#auth");
+    if (auth) {
+      auth.hidden = true;
+      auth.replaceChildren();
+    }
+    if (app) app.hidden = false;
+  }
+
   function loadApplication() {
+    revealApplicationShell();
     const script = document.createElement("script");
     script.type = "module";
-    script.src = "/assets/personal-workspace.js?v=workspace1";
+    script.src = "/assets/personal-workspace.js?v=workspace2";
     script.onerror = () => showPrivateLinkMessage("The private workspace could not be loaded. Refresh once.");
     document.body.appendChild(script);
   }
