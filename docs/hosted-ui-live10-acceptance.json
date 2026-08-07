@@ -1,0 +1,23 @@
+{
+  "tested_commit": "4446617afb19b09b1e1f9523131a5117fcacdbe9",
+  "origin": "https://swiss-career-intelligence-os.onrender.com",
+  "observed_at_utc": "2026-08-07T08:53:13.397806+00:00",
+  "probe_result": "success",
+  "tls": "validated by curl certificate verification",
+  "root_status": 200,
+  "healthz_status": 200,
+  "readyz_status": 200,
+  "live10_css_status": 200,
+  "frictionless_js_status": 200,
+  "live10_css_sha256": "07b28133ea51f4a96322b70a62b9a79c70e1a1c4cbb61df735e12c490c2f6ebd",
+  "frictionless_js_sha256": "15b51d41f80088fc694dfb782ac3447364432f65c741cbe86f4970142f7c4763",
+  "verified_ui_contract": {
+    "one_dominant_priority": true,
+    "remaining_actions_deduplicated": true,
+    "mobile_navigation_items": 5,
+    "direct_profile_navigation": true,
+    "network_hidden_from_primary_ui": true,
+    "assets_hidden_from_primary_ui": true,
+    "operational_noise_hidden": true
+  }
+}
