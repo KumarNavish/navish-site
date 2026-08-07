@@ -9,7 +9,7 @@
   <link rel="manifest" href="/assets/manifest-workspace.webmanifest?v=workspace1">
   <link rel="icon" href="/assets/icon.svg">
   <link rel="stylesheet" href="/assets/live.css?v=live9">
-  <link rel="stylesheet" href="/assets/workspace-white.css?v=focus11">
+  <link rel="stylesheet" href="/assets/workspace-white.css?v=clarity12">
 </head>
 <body>
   <div id="auth" class="auth-surface"></div>
@@ -17,7 +17,7 @@
     <aside id="sidebar" class="workspace-nav" aria-label="Primary navigation">
       <button class="workspace-brand" data-route="today" aria-label="Open Today">
         <span class="workspace-mark" aria-hidden="true">N</span>
-        <span><strong>Hiring</strong><small>Switzerland</small></span>
+        <span><strong>Hiring</strong><small>Navish Kumar</small></span>
       </button>
       <nav class="workspace-nav-list">
         <button data-route="today"><span>Today</span></button>
@@ -33,14 +33,10 @@
     <div id="sidebar-scrim" class="nav-scrim" hidden></div>
 
     <div class="workspace-frame">
-      <header class="workspace-topbar">
-        <button id="menu-toggle" class="plain-icon mobile-only" aria-label="Open navigation">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-        </button>
-        <div class="route-heading"><strong id="route-title" role="heading" aria-level="1">Today</strong><span id="route-subtitle">Your next useful move</span></div>
-        <button class="top-profile" data-route="profile" aria-label="Open profile"><span class="profile-avatar">NK</span></button>
-        <button id="logout" class="text-button" hidden>Sign out</button>
-      </header>
+      <div class="route-state sr-only" aria-live="polite">
+        <strong id="route-title">Today</strong>
+        <span id="route-subtitle">Your next move</span>
+      </div>
       <main class="workspace-main"><section id="view" aria-live="polite"></section></main>
     </div>
 
@@ -48,7 +44,7 @@
       <button data-route="today"><span>Today</span></button>
       <button data-route="opportunities"><span>Roles</span></button>
       <button data-route="applications"><span>Apply</span></button>
-      <button data-route="interviews"><span>Prepare</span></button>
+      <button data-route="interviews"><span>Practice</span></button>
       <button data-route="profile"><span>Profile</span></button>
     </nav>
   </div>
@@ -56,6 +52,6 @@
   <dialog id="dialog"><div id="dialog-body"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/assets/workspace-request-queue.js?v=workspace4"></script>
-  <script src="/assets/workspace-access.js?v=focus11" defer></script>
+  <script src="/assets/workspace-access.js?v=clarity12" defer></script>
 </body>
 </html>

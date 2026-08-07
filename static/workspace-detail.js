@@ -31,6 +31,34 @@ function candidateCopy(input) {
     .replace(/\bNavish\b/g, "you");
 }
 
+function concise(input, limit = 220) {
+  const normalized = candidateCopy(input).replace(/\s+/g, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  const slice = normalized.slice(0, limit + 1);
+  const sentence = slice.match(/^(.{80,}?[.!?])(?:\s|$)/);
+  if (sentence) return sentence[1];
+  const boundary = slice.lastIndexOf(" ");
+  return `${slice.slice(0, boundary > 100 ? boundary : limit).trim()}…`;
+}
+
+function sentenceCase(input) {
+  const clean = value(input, "").trim().replace(/[.]+$/, "");
+  return clean ? `${clean.charAt(0).toUpperCase()}${clean.slice(1)}.` : "";
+}
+
+function applicationReasons(pkg) {
+  const source = Array.isArray(pkg?.top_reasons) ? pkg.top_reasons.filter(Boolean) : [];
+  if (!source.length) return [];
+  const first = candidateCopy(source[0]).replace(/^This team may interview you because\s+/i, "");
+  const split = first.split(/\s*,?\s*while\s+/i).filter(Boolean);
+  if (split.length === 2) {
+    const third = source[2] || source[1] || "";
+    return [sentenceCase(split[0]), sentenceCase(split[1]), concise(third, 180)].filter(Boolean).slice(0, 3);
+  }
+  return source.slice(0, 3).map((reason) => concise(reason, 300));
+}
+
+
 function formatMoney(amount) {
   const numeric = Number(amount);
   return Number.isFinite(numeric)
@@ -93,21 +121,17 @@ function drawerHeader(role, application, primaryAction, tab = "overview") {
   const compensation = compensationView(role);
   const compact = tab !== "overview";
   const deadline = application?.next_action_deadline ? formatDate(application.next_action_deadline, true) : "No deadline confirmed";
+  const nextAction = application?.next_action || role.primary_strategy || "Review the evidence and choose one action.";
+  const timing = value(role.urgency, "Timing unconfirmed");
   return `<header class="detail-header ${compact ? "compact" : ""}">
+    <p class="detail-company">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p>
     <div class="detail-title-row">
-      <div class="detail-identity">
-        <p class="detail-company">${escapeHtml(role.company)} · ${escapeHtml(role.location)}</p>
-        <h1>${escapeHtml(role.title)}</h1>
-        ${compact ? `<p class="detail-section-name">${escapeHtml(TABS.find(([id]) => id === tab)?.[1] || "Role")}</p>` : `<p class="decision-line"><strong>${escapeHtml(decision)}</strong><span>${escapeHtml(value(role.urgency, "Timing unconfirmed"))}</span></p>`}
-      </div>
-      <div class="detail-header-action">${primaryAction}</div>
+      <div class="detail-identity"><h1>${escapeHtml(role.title)}</h1></div>
+      ${compact && primaryAction ? `<div class="detail-header-action">${primaryAction}</div>` : ""}
     </div>
-    ${compact ? `<div class="compact-role-state"><span>Stage: ${escapeHtml(stage)}</span><span>${deadline === "No deadline confirmed" ? escapeHtml(deadline) : `Due ${escapeHtml(deadline)}`}</span></div>` : `<div class="role-facts-line" aria-label="Role facts">
-      <span><strong>${escapeHtml(invitation)}</strong> interview case</span>
-      <span>${escapeHtml(compensation.label)}</span>
-      <span>Stage: ${escapeHtml(stage)}</span>
-      <span>${deadline === "No deadline confirmed" ? escapeHtml(deadline) : `Due ${escapeHtml(deadline)}`}</span>
-    </div>`}
+    ${compact ? `<p class="compact-role-state"><strong>${escapeHtml(stage)}</strong><span>${deadline === "No deadline confirmed" ? escapeHtml(deadline) : `Due ${escapeHtml(deadline)}`}</span></p>${tab === "application" ? `<div class="compact-next-action"><span>Next</span><strong>${escapeHtml(concise(nextAction, 180))}</strong></div>` : ""}` : `<p class="decision-summary"><strong>${escapeHtml(decision)}</strong><span>${escapeHtml(`${invitation} interview case`)}</span><span>${escapeHtml(timing)}</span></p>
+      <div class="role-action-line"><div><span>Do next</span><strong>${escapeHtml(concise(nextAction, 190))}</strong></div>${primaryAction ? `<div class="detail-header-action">${primaryAction}</div>` : ""}</div>
+      <p class="role-economics">${escapeHtml(compensation.label)} <span aria-hidden="true">·</span> ${escapeHtml(compensation.confidence)}</p>`}
   </header>`;
 }
 
@@ -117,7 +141,7 @@ function evidenceDisclosure(role, application) {
   const count = matches.length + claims.length;
   const officialUrl = safeExternalUrl(role.official_url);
   return `<details class="detail-disclosure evidence-disclosure">
-    <summary><span><strong>Evidence and source</strong><small>${count ? `${count} source-linked record${count === 1 ? "" : "s"}` : "Evidence review required"}</small></span><span aria-hidden="true">+</span></summary>
+    <summary><span><strong>Evidence behind this recommendation</strong><small>${count ? `${count} source-linked record${count === 1 ? "" : "s"}` : "Evidence review required"}</small></span><span aria-hidden="true">+</span></summary>
     <div class="disclosure-body">
       <div class="source-note"><strong>${escapeHtml(value(role.source_status, "Source status unconfirmed"))}</strong><span>${role.last_verified_at ? `Verified ${escapeHtml(formatDate(role.last_verified_at, true))}` : "Current status not reverified"}</span>${officialUrl ? `<a class="inline-source-link" href="${escapeHtml(officialUrl)}" target="_blank" rel="noopener noreferrer">Open official listing ${icon("external", 13)}</a>` : ""}</div>
       ${matches.length ? `<div class="evidence-stack">${matches.map((match) => `<article><h4>${escapeHtml(match.requirement)}</h4><p>${escapeHtml(match.evidence)}</p><small>${escapeHtml(match.source)} · ${escapeHtml(match.strength)}</small></article>`).join("")}</div>` : `<p class="muted-copy">No direct match is strong enough to surface yet.</p>`}
@@ -127,21 +151,15 @@ function evidenceDisclosure(role, application) {
 }
 
 function overviewTab(role, application) {
-  const nextAction = application?.next_action || role.primary_strategy || "Review the role evidence and choose one action.";
-  const deadline = application?.next_action_deadline ? `Due ${formatDate(application.next_action_deadline, true)}` : value(role.urgency, "Timing unconfirmed");
   return `<div class="role-decision-flow">
     <section class="decision-story">
-      <p class="section-kicker">Why this can work</p>
-      <h2>You have a credible reason to be interviewed.</h2>
-      <p>${escapeHtml(candidateCopy(role.why_interview))}</p>
+      <h2>Why this may convert</h2>
+      <p>${escapeHtml(concise(role.why_interview, 360))}</p>
     </section>
     <section class="screening-risk">
-      <p class="section-kicker">What could stop an interview</p>
-      <h2>${escapeHtml(value(role.blocker, "No material blocker recorded."))}</h2>
-      <p class="risk-correction"><strong>Reduce the risk:</strong> ${escapeHtml(value(role.fastest_correction, "Confirm the missing evidence before applying."))}</p>
-    </section>
-    <section class="next-move-block">
-      <div><p class="section-kicker">Next move</p><h2>${escapeHtml(nextAction)}</h2><p>${escapeHtml(deadline)}</p></div>
+      <h2>Main screening risk</h2>
+      <p class="risk-title">${escapeHtml(value(role.blocker, "No material blocker recorded."))}</p>
+      <p class="risk-correction"><strong>Reduce it:</strong> ${escapeHtml(value(role.fastest_correction, "Confirm the missing evidence before applying."))}</p>
     </section>
     ${evidenceDisclosure(role, application)}
   </div>`;
@@ -159,7 +177,7 @@ function applicationSupport(role, application, contacts) {
   const roleContacts = contacts.filter((contact) => contact.job_id === role.id || (!contact.job_id && contact.company === role.company));
   return `<div class="support-disclosures application-details">
     <details class="detail-disclosure">
-      <summary><span><strong>Evidence coverage</strong><small>${matrix.length ? `${matrix.length} requirements checked` : "Evidence map unavailable"}</small></span><span aria-hidden="true">+</span></summary>
+      <summary><span><strong>Requirement evidence</strong><small>${matrix.length ? `${matrix.length} requirements checked` : "Evidence map unavailable"}</small></span><span aria-hidden="true">+</span></summary>
       <div class="disclosure-body">
         ${matrix.length ? `<div class="requirement-map">${matrix.map((item) => `<article class="requirement-row ${String(item.strength).includes("missing") ? "missing" : ""}"><div><h4>${escapeHtml(item.requirement)}</h4><p>${escapeHtml(item.evidence)}</p><small>${escapeHtml(item.source)}</small></div><span class="requirement-strength">${escapeHtml(item.strength)}</span></article>`).join("")}</div>` : `<p class="muted-copy">No requirement map is available yet.</p>`}
         <div class="selection-columns compact-selections"><div><h4>Projects</h4>${projects.length ? `<ol>${projects.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : `<p class="muted-copy">No project selected.</p>`}</div><div><h4>Publications</h4>${publications.length ? `<ol>${publications.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : `<p class="muted-copy">No publication selected.</p>`}</div></div>
@@ -173,7 +191,7 @@ function applicationSupport(role, application, contacts) {
       </div>
     </details>
     <details class="detail-disclosure">
-      <summary><span><strong>Risks and final checks</strong><small>${objections.length ? `${objections.length} likely screening objection${objections.length === 1 ? "" : "s"}` : "Manual review required"}</small></span><span aria-hidden="true">+</span></summary>
+      <summary><span><strong>Risks and checks</strong><small>${objections.length ? `${objections.length} likely screening objection${objections.length === 1 ? "" : "s"}` : "Manual review required"}</small></span><span aria-hidden="true">+</span></summary>
       <div class="disclosure-body objection-list">
         ${objections.length ? objections.map((objection, index) => `<article><h4>${escapeHtml(objection)}</h4><p>${escapeHtml(responses[index] || responses[0] || "Answer with the exact evidence boundary and do not overclaim.")}</p></article>`).join("") : `<p class="muted-copy">No screening objection is recorded.</p>`}
         ${pkg.prohibited_claims?.length ? `<div class="claim-boundary"><h4>Do not claim</h4><ul>${pkg.prohibited_claims.map((claim) => `<li>${escapeHtml(claim)}</li>`).join("")}</ul></div>` : ""}
@@ -184,7 +202,7 @@ function applicationSupport(role, application, contacts) {
       </div>
     </details>
     <details class="detail-disclosure">
-      <summary><span><strong>Contacts and history</strong><small>${roleContacts.length ? `${roleContacts.length} verified contact path${roleContacts.length === 1 ? "" : "s"}` : "No verified contact path"}</small></span><span aria-hidden="true">+</span></summary>
+      <summary><span><strong>People and activity</strong><small>${roleContacts.length ? `${roleContacts.length} verified contact path${roleContacts.length === 1 ? "" : "s"}` : "No verified contact path"}</small></span><span aria-hidden="true">+</span></summary>
       <div class="disclosure-body">
         <div class="support-action">${button("Add verified contact", { tone: "secondary", compact: true, attrs: `data-add-contact="${role.id}"` })}${button("Add activity", { tone: "secondary", compact: true, attrs: `data-add-activity="${application.id}"` })}</div>
         ${roleContacts.length ? `<div class="contact-list">${roleContacts.map((contact) => `<article class="contact-row"><div class="contact-avatar">${escapeHtml(contact.name.slice(0, 2).toUpperCase())}</div><div><h4>${escapeHtml(contact.name)}</h4><p>${escapeHtml(contact.role || "Role unconfirmed")} · ${escapeHtml(contact.relationship)}</p><small>${escapeHtml(contact.source || "Source unconfirmed")}</small></div></article>`).join("")}</div>` : `<p class="muted-copy">No verified contact is attached. The system never contacts anyone automatically.</p>`}
@@ -196,22 +214,17 @@ function applicationSupport(role, application, contacts) {
 
 function applicationTab(role, application, contacts) {
   if (!application) {
-    return `<div class="drawer-empty"><h2>Prepare the application only if this role is worth pursuing.</h2><p>This creates one evidence-linked package and a role-specific practice plan. It never submits or contacts anyone.</p>${button("Pursue this role", { attrs: `data-pursue-role="${role.id}"` })}</div>`;
+    return `<div class="drawer-empty"><h2>Prepare this application only if the role is worth pursuing.</h2><p>This creates one evidence-linked package and role-specific practice. It never submits or contacts anyone.</p>${button("Prepare application", { attrs: `data-pursue-role="${role.id}"` })}</div>`;
   }
   const pkg = application.package || {};
-  const reasons = Array.isArray(pkg.top_reasons) ? pkg.top_reasons.slice(0, 3) : [];
+  const reasons = applicationReasons(pkg);
   const prohibited = Array.isArray(pkg.prohibited_claims) ? pkg.prohibited_claims : [];
   const deadline = application.next_action_deadline ? formatDate(application.next_action_deadline, true) : "No deadline confirmed";
   const trackingSummary = `${application.state} · ${deadline}`;
   return `<div class="application-flow">
-    <section class="application-next">
-      <p class="section-kicker">Next move</p>
-      <h2>${escapeHtml(application.next_action)}</h2>
-      <p>${escapeHtml(application.state)} · ${escapeHtml(deadline)}</p>
-    </section>
-    ${application.package_ready ? `<section class="application-lead"><p class="section-kicker">Lead with</p><h2>Three reasons this application is credible</h2>${reasons.length ? `<ol class="fit-reason-list">${reasons.map((reason) => `<li>${escapeHtml(candidateCopy(reason))}</li>`).join("")}</ol>` : `<p class="muted-copy">No evidence-supported reasons are available yet.</p>`}</section>
-      <section class="application-positioning"><div class="section-heading-inline"><div><p class="section-kicker">Tailored positioning</p><h2>${escapeHtml(pkg.headline || "Role-specific profile")}</h2></div>${button("Copy", { tone: "secondary", compact: true, attrs: 'data-copy-package="summary"' })}</div><p>${escapeHtml(pkg.professional_summary || "")}</p></section>
-      ${prohibited.length ? `<section class="truth-boundary"><p class="section-kicker">Keep it honest</p><h2>Do not overclaim.</h2><p>${escapeHtml(prohibited[0])}${prohibited.length > 1 ? ` <span>${escapeHtml(`+${prohibited.length - 1} more in final checks`)}</span>` : ""}</p></section>` : ""}` : `<section class="application-positioning"><h2>Package not ready.</h2><p>The evidence-linked package is generated after Pursue.</p></section>`}
+    ${application.package_ready ? `<section class="application-lead"><h2>What the recruiter should understand</h2>${reasons.length ? `<ol class="fit-reason-list">${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ol>` : `<p class="muted-copy">No evidence-supported reasons are available yet.</p>`}</section>
+      <section class="application-positioning"><div class="section-heading-inline"><div><h2>${escapeHtml(pkg.headline || "Role-specific positioning")}</h2></div>${button("Copy summary", { tone: "secondary", compact: true, attrs: 'data-copy-package="summary"' })}</div><p>${escapeHtml(concise(pkg.professional_summary || "", 520))}</p></section>
+      ${prohibited.length ? `<section class="truth-boundary"><h2>Stay inside the evidence.</h2><p>${escapeHtml(prohibited[0])}${prohibited.length > 1 ? ` <span>${escapeHtml(`+${prohibited.length - 1} more in risks and checks`)}</span>` : ""}</p></section>` : ""}` : `<section class="application-positioning"><h2>Package not ready.</h2><p>The evidence-linked package is generated after Pursue.</p></section>`}
     ${applicationSupport(role, application, contacts)}
     <details class="detail-disclosure application-control-disclosure">
       <summary><span><strong>Application tracking</strong><small>${escapeHtml(trackingSummary)}</small></span><span aria-hidden="true">+</span></summary>
@@ -225,26 +238,25 @@ function applicationTab(role, application, contacts) {
 
 function preparationTab(role, application, sessions) {
   if (!sessions.length) {
-    return `<div class="drawer-empty"><h2>No role-specific practice is due.</h2><p>Practice is created only after Pursue and remains tied to this role.</p>${application ? button("Open application", { tone: "secondary", attrs: 'data-detail-tab="application"' }) : ""}</div>`;
+    return `<div class="drawer-empty"><h2>No role-specific practice is due.</h2><p>Practice is created only after Pursue and stays tied to this role.</p>${application ? button("Open application", { tone: "secondary", attrs: 'data-detail-tab="application"' }) : ""}</div>`;
   }
   const ordered = [...sessions].sort((a, b) => {
     if (Boolean(a.complete) !== Boolean(b.complete)) return a.complete ? 1 : -1;
     return new Date(a.due_at || 0) - new Date(b.due_at || 0);
   });
   const complete = sessions.filter((session) => session.complete).length;
-  const percentage = Math.round((complete / sessions.length) * 100);
   const next = ordered.find((session) => !session.complete) || ordered[0];
   const remaining = ordered.filter((session) => session.id !== next.id);
   return `<div class="practice-flow">
     <section class="practice-focus">
-      <p class="section-kicker">Next session · ${escapeHtml(String(next.duration))} min</p>
+      <p class="section-kicker">Next practice · ${escapeHtml(String(next.duration))} min</p>
       <h2>${escapeHtml(next.competency)}</h2>
       <p class="next-session-prompt">${escapeHtml(next.prompt)}</p>
-      <div class="next-session-meta"><span>${next.due_at ? `Due ${escapeHtml(formatDate(next.due_at, true))}` : "No deadline"}</span><span>${next.due_at ? escapeHtml(formatRelative(next.due_at)) : ""}</span></div>
+      <p class="next-session-meta">${next.due_at ? `Due ${escapeHtml(formatDate(next.due_at, true))}` : "No deadline"}${next.due_at ? ` <span aria-hidden="true">·</span> ${escapeHtml(formatRelative(next.due_at))}` : ""}</p>
       ${next.complete ? `<p class="completion-note">This session is complete.</p>` : `<div class="inline-actions">${button("Mark complete", { tone: "primary", compact: true, attrs: `data-complete-session="${next.id}"` })}</div>`}
     </section>
-    <section class="practice-progress"><div><strong>${complete} of ${sessions.length} sessions complete</strong><span>Only role-relevant practice is scheduled.</span></div>${progress(percentage, `${percentage}% complete`)}</section>
-    ${remaining.length ? `<details class="detail-disclosure remaining-session-disclosure"><summary><span><strong>Remaining sessions</strong><small>${remaining.length} session${remaining.length === 1 ? "" : "s"}</small></span><span aria-hidden="true">+</span></summary><div class="disclosure-body session-list remaining-sessions">${remaining.map((session) => `<article class="session-row ${session.complete ? "complete" : ""}"><div class="session-state">${session.complete ? icon("check", 17) : icon("clock", 17)}</div><div><h4>${escapeHtml(session.competency)}</h4><p>${escapeHtml(session.prompt)}</p><small>${session.duration} min · ${session.due_at ? `due ${formatDate(session.due_at, true)}` : "no deadline"}</small></div>${session.complete ? `<span class="plain-state">Complete</span>` : button("Complete", { tone: "secondary", compact: true, attrs: `data-complete-session="${session.id}"` })}</article>`).join("")}</div></details>` : ""}
+    <p class="practice-progress-line"><strong>${complete} of ${sessions.length} complete</strong><span>Only role-specific practice is scheduled.</span></p>
+    ${remaining.length ? `<details class="detail-disclosure remaining-session-disclosure"><summary><span><strong>Later sessions</strong><small>${remaining.length} session${remaining.length === 1 ? "" : "s"}</small></span><span aria-hidden="true">+</span></summary><div class="disclosure-body session-list remaining-sessions">${remaining.map((session) => `<article class="session-row ${session.complete ? "complete" : ""}"><div class="session-state">${session.complete ? icon("check", 17) : icon("clock", 17)}</div><div><h4>${escapeHtml(session.competency)}</h4><p>${escapeHtml(session.prompt)}</p><small>${session.duration} min · ${session.due_at ? `due ${formatDate(session.due_at, true)}` : "no deadline"}</small></div>${session.complete ? `<span class="plain-state">Complete</span>` : button("Complete", { tone: "secondary", compact: true, attrs: `data-complete-session="${session.id}"` })}</article>`).join("")}</div></details>` : ""}
   </div>`;
 }
 
@@ -362,7 +374,7 @@ export async function openRoleWorkspace(
     state.detail.tab = nextTab;
     root.dataset.section = nextTab;
     const primaryAction = !application?.package_ready
-      ? button("Pursue this role", { attrs: `data-pursue-role="${role.id}"` })
+      ? button("Prepare application", { attrs: `data-pursue-role="${role.id}"` })
       : nextTab === "application"
         ? application.state === "Preparing"
           ? button("Mark ready", { attrs: `data-mark-ready="${application.id}"` })
@@ -370,8 +382,8 @@ export async function openRoleWorkspace(
             ? button("Record submission", { attrs: `data-confirm-submitted="${application.id}"` })
             : button("Open practice", { attrs: 'data-detail-tab="preparation"' })
         : nextTab === "preparation"
-          ? button("Open application", { attrs: 'data-detail-tab="application"' })
-          : button("Open application", { attrs: 'data-detail-tab="application"' });
+          ? ""
+          : button("Review application", { attrs: 'data-detail-tab="application"' });
 
     root.innerHTML = `${drawerHeader(role, application, primaryAction, nextTab)}
       <nav class="detail-tabs" aria-label="Role workspace sections">${TABS.map(([id, label]) => `<button type="button" class="detail-tab ${id === nextTab ? "active" : ""}" data-detail-tab="${id}" aria-selected="${id === nextTab}">${escapeHtml(label)}</button>`).join("")}</nav>
