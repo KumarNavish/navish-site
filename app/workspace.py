@@ -745,10 +745,12 @@ def install_workspace(legacy: Any, runtime: Any) -> None:
         ).all()
         for practice in practices:
             job = db.get(legacy.Job, practice.job_id)
+            if job is None:
+                continue
             events.append(
                 {
                     "kind": "Preparation",
-                    "title": f"{job.company if job else 'Role'} · {practice.competency}",
+                    "title": f"{job.company} · {practice.competency}",
                     "at": _aware(practice.due_at).isoformat(),
                     "job_id": practice.job_id,
                 }

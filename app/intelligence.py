@@ -54,7 +54,7 @@ SKILL_EVIDENCE: dict[str, tuple[str, ...]] = {
     "geospatial": ("geospatial simulation", "green last mile", "safepin"),
     "simulation": ("geospatial simulation", "green last mile"),
     "statistics": ("causal inference and off-policy evaluation", "experimental design"),
-    "experimental design": ("experimental design",),
+    "experimental design": ("experimental design", "experimental design and reproducibility"),
     "research": ("phd in optimization for machine learning systems", "peer-reviewed research record"),
 }
 
@@ -247,8 +247,21 @@ def classify_compensation(title: str, description: str, salary_floor: int = 1200
     if published:
         low = int(published.group(1) + published.group(2))
         high = int(published.group(3) + published.group(4))
-        context = combined[max(0, published.start() - 100):published.end() + 120].lower()
-        comp_type = "published total compensation" if any(x in context for x in ("total compensation", "including bonus", "equity")) else "published compensation; base status unconfirmed"
+        context = combined[max(0, published.start() - 140):published.end() + 180].lower()
+        total_markers = (
+            "total compensation", "total annual compensation", "including bonus",
+            "including equity", "cash and equity", "on-target earnings", "ote",
+        )
+        base_markers = (
+            "base salary", "annual base", "base compensation", "gross annual salary",
+            "fixed salary", "base pay",
+        )
+        if any(marker in context for marker in total_markers):
+            comp_type = "published total compensation"
+        elif any(marker in context for marker in base_markers):
+            comp_type = "published base"
+        else:
+            comp_type = "published compensation; base status unconfirmed"
         return {"label": f"CHF {low:,}–{high:,} {comp_type}", "low": low, "high": high, "type": comp_type, "confidence": "high"}
 
     low_title = title.lower()
@@ -264,8 +277,27 @@ def classify_compensation(title: str, description: str, salary_floor: int = 1200
     return {"label": f"Estimated base CHF {low:,}–{high:,}; {position}", "low": low, "high": high, "type": "estimated base", "confidence": "medium-low"}
 
 
+def _normalized_label(value: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9+]+", " ", str(value).lower()).split())
+
+
 def evidence_index(evidence: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {str(item.get("name", "")).lower(): item for item in evidence}
+    return {_normalized_label(str(item.get("name", ""))): item for item in evidence}
+
+
+def _evidence_for_alias(index: dict[str, dict[str, Any]], alias: str) -> dict[str, Any] | None:
+    normalized = _normalized_label(alias)
+    if normalized in index:
+        return index[normalized]
+    # Aliases are curated and source-bounded. Allow a canonical evidence name to
+    # extend an alias (for example "experimental design and reproducibility")
+    # without treating arbitrary semantic similarity as proof.
+    candidates = [
+        item
+        for name, item in index.items()
+        if normalized and (normalized in name or name in normalized)
+    ]
+    return min(candidates, key=lambda item: len(_normalized_label(item.get("name", ""))), default=None)
 
 
 def match_evidence(requirements: dict[str, Any], evidence: list[dict[str, Any]]) -> dict[str, Any]:
@@ -273,7 +305,11 @@ def match_evidence(requirements: dict[str, Any], evidence: list[dict[str, Any]])
     direct: list[dict[str, Any]] = []
     missing: list[str] = []
     for skill in requirements["skills"]:
-        matches = [index[name] for name in SKILL_EVIDENCE.get(skill, ()) if name in index]
+        matches = [
+            match
+            for alias in SKILL_EVIDENCE.get(skill, ())
+            if (match := _evidence_for_alias(index, alias)) is not None
+        ]
         if matches:
             best = matches[0]
             direct.append({"requirement": skill, "evidence": best["name"], "source": best["source"], "strength": "direct" if skill not in {"llm", "transformers", "docker", "fastapi"} else "partial or direct"})
@@ -308,6 +344,10 @@ def analyze_role(job: dict[str, Any], evidence: list[dict[str, Any]], salary_flo
     deterministic_fit = round(max(0.0, min(100.0, deterministic_fit)), 1)
 
     interview_mid = max(5, min(70, int(0.62 * deterministic_fit + 8 * (coverage >= 0.7) - 18 * severe_seniority)))
+    if matches["missing"]:
+        # A role with an unresolved mandatory requirement must not be presented
+        # as a "Very strong" screening case, regardless of aggregate overlap.
+        interview_mid = min(interview_mid, 48 if len(matches["missing"]) == 1 else 38)
     interview_low = max(3, interview_mid - 10)
     interview_high = min(80, interview_mid + 10)
     offer_mid = max(8, min(45, int(10 + 0.30 * deterministic_fit - 8 * severe_seniority)))
@@ -406,29 +446,104 @@ def serious(analysis: dict[str, Any]) -> bool:
     return analysis["decision"] in {"Strongly pursue", "Pursue", "Investigate one blocker"} and not analysis["severe_seniority_mismatch"]
 
 
+PROJECT_SKILL_SIGNALS: dict[str, set[str]] = {
+    "cl plo": {"python", "pytorch", "transformers", "optimization", "continual learning", "mlflow", "ci/cd", "testing", "experimental design"},
+    "safepin": {"python", "fastapi", "geospatial", "llm", "testing"},
+    "promopilot": {"python", "causal", "statistics", "experimental design"},
+    "green last mile": {"python", "geospatial", "simulation", "experimental design"},
+    "aalto figma plugin": {"typescript", "docker", "testing"},
+    "insurance agentic ai workflow": {"python", "llm", "experimental design"},
+    "optimization guarantees for square root natural gradient vi": {"optimization", "statistics", "experimental design", "research"},
+    "cargo bike logistics modelling": {"python", "geospatial", "simulation", "experimental design", "research"},
+    "spectral graph theory publications": {"optimization", "research"},
+}
+
+
+def _rank_evidence_for_job(
+    evidence: list[dict[str, Any]],
+    job: dict[str, Any],
+    requirements: dict[str, Any],
+    categories: set[str],
+) -> list[dict[str, Any]]:
+    terms = [*requirements.get("skills", []), *TARGET_TERMS]
+    required_skills = {_normalized_label(skill) for skill in requirements.get("skills", [])}
+    job_text = _normalized_label(f"{job.get('title', '')} {job.get('description', '')}")
+
+    def score(item: dict[str, Any]) -> tuple[int, int, int, str]:
+        name = _normalized_label(item.get("name", ""))
+        item_text = _normalized_label(f"{item.get('name', '')} {item.get('note', '')}")
+        overlap = sum(1 for term in terms if _normalized_label(term) in item_text and _normalized_label(term) in job_text)
+        direct = sum(1 for skill in required_skills if skill in item_text)
+        alias_hits = sum(
+            1
+            for skill in requirements.get("skills", [])
+            if any(_normalized_label(alias) in item_text for alias in SKILL_EVIDENCE.get(skill, ()))
+        )
+        explicit_signals = PROJECT_SKILL_SIGNALS.get(name, set())
+        signal_hits = len(required_skills.intersection({_normalized_label(skill) for skill in explicit_signals}))
+        completed = 1 if "completed" in str(item.get("status", "")).lower() else 0
+        visibility = 1 if str(item.get("recruiter_visibility", "")).lower() == "high" else 0
+        return (
+            signal_hits * 12 + alias_hits * 8 + direct * 5 + overlap * 2 + completed + visibility,
+            signal_hits,
+            completed,
+            str(item.get("name", "")),
+        )
+
+    rows = [item for item in evidence if item.get("category") in categories]
+    return sorted(rows, key=score, reverse=True)
+
+
 def application_package(job: dict[str, Any], analysis: dict[str, Any], evidence: list[dict[str, Any]]) -> dict[str, Any]:
     index = evidence_index(evidence)
     selected: list[dict[str, Any]] = []
     for match in analysis["matches"]["direct"][:7]:
-        item = index.get(match["evidence"].lower())
+        item = _evidence_for_alias(index, match["evidence"])
         if item and item not in selected:
             selected.append(item)
     if not selected:
         selected = [item for item in evidence if item["category"] in {"education", "research", "project", "experience"}][:6]
-    claims = [{"text": item["note"], "evidence": item["name"], "source": item["source"], "status": item["status"], "validated": True} for item in selected]
+
+    project_rows = _rank_evidence_for_job(
+        evidence,
+        job,
+        analysis["requirements"],
+        {"project", "experience", "industry"},
+    )[:3]
+    publication_rows = _rank_evidence_for_job(
+        evidence,
+        job,
+        analysis["requirements"],
+        {"publication"},
+    )[:3]
+    claims = [
+        {"text": item["note"], "evidence": item["name"], "source": item["source"], "status": item["status"], "validated": True}
+        for item in selected
+    ]
     matrix = [
         {"requirement": match["requirement"], "evidence": match["evidence"], "source": match["source"], "strength": match["strength"]}
         for match in analysis["matches"]["direct"]
     ]
     for gap in analysis["matches"]["missing"]:
         matrix.append({"requirement": gap, "evidence": "Current gap", "source": "No verified direct evidence", "strength": "missing"})
+
+    strongest = [match["evidence"] for match in analysis["matches"]["direct"][:4]]
+    top_reasons = [
+        analysis["why_interview"],
+        f"Strongest visible evidence: {', '.join(strongest) if strongest else 'evidence review required'}.",
+        f"Fastest credible route: {analysis['primary_strategy']}.",
+    ]
+    objections = [analysis["blocker"]]
+    objections.extend(f"No direct evidence yet for {gap}." for gap in analysis["matches"]["missing"][:3])
+    objections = list(dict.fromkeys(objections))
+
     return {
-        "headline": f"Optimization-focused Applied ML Researcher–Engineer | PyTorch, reliable adaptation, rigorous evaluation",
+        "headline": "Optimization-focused Applied ML Researcher–Engineer | PyTorch, reliable adaptation, rigorous evaluation",
         "professional_summary": (
             f"University of Basel PhD researcher translating optimization, continual-learning and evaluation methods into auditable ML systems. "
             f"For {job['company']}, the strongest fit is the combination of rigorous experimentation, PyTorch implementation and release-oriented evidence—not unsupported claims of large-scale production tenure."
         ),
-        "top_reasons": [analysis["why_interview"], f"Mandatory-evidence strength: {analysis['mandatory_evidence_strength']}/100.", f"Primary strategy: {analysis['primary_strategy']}."],
+        "top_reasons": top_reasons,
         "evidence_claims": claims,
         "requirement_matrix": matrix,
         "recruiter_pitch": (
@@ -439,15 +554,24 @@ def application_package(job: dict[str, Any], analysis: dict[str, Any], evidence:
             f"I am interested in {job['title']} because the role’s central problem overlaps with my work on reliable model updates, optimization and evidence-driven evaluation. "
             "I would be glad to walk through one concrete result, its failure modes and the implementation decisions behind it."
         ),
-        "projects": [item["name"] for item in selected if item["category"] in {"project", "experience", "industry"}][:3],
-        "publications": [item["name"] for item in evidence if item["category"] == "publication"][:3],
-        "screening_objections": [analysis["blocker"], *[f"No direct evidence yet for {gap}." for gap in analysis["matches"]["missing"][:3]]],
-        "truthful_responses": [analysis["fastest_correction"], "Separate research depth from production tenure and state exact ownership boundaries."],
+        "projects": [item["name"] for item in project_rows],
+        "publications": [item["name"] for item in publication_rows],
+        "screening_objections": objections,
+        "truthful_responses": [
+            analysis["fastest_correction"],
+            "Separate research depth from production tenure and state exact ownership boundaries.",
+        ],
         "compensation_positioning": f"Target base CHF 120,000+; source interpretation: {analysis['compensation']['label']}. Verify base versus total before final-stage commitment.",
-        "cover_note": f"Concise motivation note recommended only if the application permits role-specific context; avoid a generic cover letter.",
+        "cover_note": "Use a concise motivation note only when the application benefits from role-specific context; omit a generic cover letter.",
         "referral_recommendation": "Do not request a referral from an unverified stranger. Seek technical calibration first when a credible shared context exists.",
         "prohibited_claims": analysis["prohibited_claims"],
-        "submission_checklist": ["Verify the official listing is still active.", "Review every evidence-linked claim.", "Confirm work-authorization wording.", "Confirm base-compensation interpretation.", "Submit manually and then explicitly mark Applied."],
+        "submission_checklist": [
+            "Verify the official listing is still active.",
+            "Review every evidence-linked claim.",
+            "Confirm work-authorization wording.",
+            "Confirm base-compensation interpretation.",
+            "Submit manually and then explicitly mark Applied.",
+        ],
         "external_action_executed": False,
         "generated_at": datetime.now(UTC).isoformat(),
     }
