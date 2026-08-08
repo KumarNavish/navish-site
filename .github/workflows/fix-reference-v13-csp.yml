@@ -1,0 +1,135 @@
+name: Fix reference dashboard CSP-safe fit ring
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  fix:
+    if: github.event.issue.user.login == 'KumarNavish' && contains(github.event.issue.title, '[FIX REFERENCE V13 CSP]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/reference-dashboard-v13
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: pip
+
+      - name: Replace inline fit-ring styles with CSP-safe SVG
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('static/personal-workspace.js'): (
+                  'return `<div class="fit-ring" style="--fit:${numeric}" aria-label="Evidence fit ${numeric} out of 100"><div><strong>${numeric}</strong><span>Evidence fit</span></div></div>`;',
+                  'return `<div class="fit-ring" aria-label="Evidence fit ${numeric} out of 100"><svg viewBox="0 0 42 42" aria-hidden="true"><circle class="fit-ring-track" cx="21" cy="21" r="17" pathLength="100"></circle><circle class="fit-ring-value" cx="21" cy="21" r="17" pathLength="100" stroke-dasharray="${numeric} 100"></circle></svg><div><strong>${numeric}</strong><span>Evidence fit</span></div></div>`;',
+              ),
+              Path('static/workspace-detail.js'): (
+                  'return `<div class="fit-ring detail-fit-ring" style="--fit:${numeric}" aria-label="Evidence fit ${numeric} out of 100"><div><strong>${numeric}</strong><span>Evidence fit</span></div></div>`;',
+                  'return `<div class="fit-ring detail-fit-ring" aria-label="Evidence fit ${numeric} out of 100"><svg viewBox="0 0 42 42" aria-hidden="true"><circle class="fit-ring-track" cx="21" cy="21" r="17" pathLength="100"></circle><circle class="fit-ring-value" cx="21" cy="21" r="17" pathLength="100" stroke-dasharray="${numeric} 100"></circle></svg><div><strong>${numeric}</strong><span>Evidence fit</span></div></div>`;',
+              ),
+          }
+          for path, (old, new) in replacements.items():
+              source = path.read_text()
+              if old not in source:
+                  raise SystemExit(f'expected inline fit ring not found in {path}')
+              path.write_text(source.replace(old, new, 1))
+
+          css_path = Path('static/workspace-white.css')
+          css = css_path.read_text()
+          old_css = '''.fit-ring {
+            --fit: 0;
+            width: 104px;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            position: relative;
+            background: conic-gradient(var(--ref-green) calc(var(--fit) * 1%), #e5e9f0 0);
+          }
+          .fit-ring::after { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: #fff; }
+          .fit-ring > div { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+          '''
+          new_css = '''.fit-ring {
+            width: 104px;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            position: relative;
+          }
+          .fit-ring > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+          .fit-ring circle { fill: none; stroke-width: 3.2; }
+          .fit-ring-track { stroke: #e5e9f0; }
+          .fit-ring-value { stroke: var(--ref-green); stroke-linecap: round; }
+          .fit-ring > div { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+          '''
+          if old_css not in css:
+              raise SystemExit('expected inline-variable fit-ring CSS not found')
+          css_path.write_text(css.replace(old_css, new_css, 1))
+
+          test_path = Path('tests/test_personal_workspace_ui.py')
+          test_source = test_path.read_text()
+          marker = 'def test_fit_ring_is_csp_safe() -> None:'
+          if marker not in test_source:
+              test_source += '''\n\ndef test_fit_ring_is_csp_safe() -> None:\n    app = (STATIC / "personal-workspace.js").read_text()\n    detail = (STATIC / "workspace-detail.js").read_text()\n    css = (STATIC / "workspace-white.css").read_text()\n\n    assert 'style="--fit:' not in app\n    assert 'style="--fit:' not in detail\n    assert 'stroke-dasharray="${numeric} 100"' in app\n    assert 'stroke-dasharray="${numeric} 100"' in detail\n    assert '.fit-ring-value' in css\n    assert 'conic-gradient(var(--ref-green)' not in css\n'''
+              test_path.write_text(test_source)
+          PY
+
+      - name: Verify source
+        shell: bash
+        env:
+          PYTHONPATH: .
+          DATABASE_URL: sqlite:////tmp/scios-reference-v13-csp.db
+          SCIOS_ENVIRONMENT: development
+          SCIOS_WORKER_ENABLED: 'false'
+          SCIOS_SESSION_SECURE_COOKIE: 'false'
+          SCIOS_INTERNAL_SECRET: reference-v13-csp-secret
+          SCIOS_ACCESS_TOKEN: ci-private-access
+          SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+          SCIOS_TEST_MODE: 'true'
+          SCIOS_TEST_ACCESS_TOKENS: ci-private-access,workspace-private-access
+          OPENAI_ENABLED: 'false'
+          PAID_SERVICES_ALLOWED: 'false'
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m compileall -q app.py app scripts tests
+          for file in static/*.js; do
+            if grep -Eq '^(import|export) ' "$file"; then
+              node --input-type=module --check < "$file"
+            else
+              node --check "$file"
+            fi
+          done
+          pytest -q
+
+      - name: Commit CSP-safe ring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git add static/personal-workspace.js static/workspace-detail.js static/workspace-white.css tests/test_personal_workspace_ui.py
+          git commit -m 'Render evidence fit rings without inline styles'
+          git push origin HEAD:ux/reference-dashboard-v13
+
+      - name: Publish result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Reference v13 CSP repair: ${{ job.status }}. Workflow run ID: ${{ github.run_id }}."
