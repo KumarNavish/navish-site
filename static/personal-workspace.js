@@ -2,9 +2,9 @@
 
 import {
   $, $$, api, clearToast, escapeHtml, formatDate, formatRelative, icon,
-  loading, errorState, showDialog, state, toast,
+  loading, errorState, showDialog, state, toast, deadlineView,
 } from "./ui.js";
-import { openRoleWorkspace } from "./workspace-detail.js?v=reference1";
+import { openRoleWorkspace } from "./workspace-detail.js?v=polish14";
 
 const ROUTE_COPY = {
   today: ["Today", "Your next best move"],
@@ -68,13 +68,17 @@ function formatMoney(amount) {
     ? new Intl.NumberFormat("en-CH", { maximumFractionDigits: 0 }).format(numeric)
     : "";
 }
+function normalizeSwissNumberSeparators(input) {
+  return text(input).replace(/(\d)[’'‘](?=\d{3}\b)/g, "$1’");
+}
 function compensationView(role) {
   const compensation = role?.compensation || {};
   const low = formatMoney(compensation.low);
   const high = formatMoney(compensation.high);
-  const range = low && high
+  const rawRange = low && high
     ? `CHF ${low}–${high}`
     : text(compensation.label || role?.compensation_label, "Compensation unresolved");
+  const range = normalizeSwissNumberSeparators(rawRange);
   const type = text(compensation.type, "").toLowerCase();
   if (type.includes("published base")) return { label: `${range} base`, note: "Employer-published" };
   if (type.includes("published total")) return { label: `${range} total`, note: "Employer-published; base unconfirmed" };
@@ -91,11 +95,13 @@ function fitLabel(score) {
   return "Material gaps";
 }
 function sourceRecency(role) {
-  const value = role?.last_verified_at || role?.retrieved_at || role?.published_at;
-  return value ? formatRelative(value) : "verification date unconfirmed";
+  if (role?.last_verified_at) return `Verified ${formatRelative(role.last_verified_at)}`;
+  if (role?.retrieved_at) return `Retrieved ${formatRelative(role.retrieved_at)}`;
+  if (role?.published_at) return `Posted ${formatRelative(role.published_at)}`;
+  return "Verification date unconfirmed";
 }
 function dueLabel(value, fallback = "No deadline confirmed") {
-  return value ? formatDate(value, true) : fallback;
+  return deadlineView(value, fallback).label;
 }
 function opportunityLabel(role) {
   return role ? `${role.company} · ${role.title}` : "Candidate profile";
@@ -133,7 +139,12 @@ function setChrome(route) {
   $("#route-title").textContent = title;
   $("#route-subtitle").textContent = subtitle;
   document.title = `${title} · Swiss Career Intelligence`;
-  $$('[data-route]').forEach((node) => node.classList.toggle("active", node.dataset.route === route));
+  $$('[data-route]').forEach((node) => {
+    const active = node.dataset.route === route;
+    node.classList.toggle("active", active);
+    if (active) node.setAttribute("aria-current", "page");
+    else node.removeAttribute("aria-current");
+  });
 }
 function setRoleChrome(role, sectionName = "overview") {
   const title = text(role?.title, "Role workspace");
@@ -142,7 +153,12 @@ function setRoleChrome(role, sectionName = "overview") {
   $("#route-subtitle").textContent = `${title} · ${text(role?.company, "Employer")}`;
   document.title = `${title} · ${section} · Swiss Career Intelligence`;
   const activeRoute = routeForSection(sectionName);
-  $$('[data-route]').forEach((node) => node.classList.toggle("active", node.dataset.route === activeRoute));
+  $$('[data-route]').forEach((node) => {
+    const active = node.dataset.route === activeRoute;
+    node.classList.toggle("active", active);
+    if (active) node.setAttribute("aria-current", "page");
+    else node.removeAttribute("aria-current");
+  });
 }
 function pageHeader(title, description, action = "") {
   return `<header class="dashboard-heading"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div>${action ? `<div class="dashboard-heading-action">${action}</div>` : ""}</header>`;
@@ -251,7 +267,7 @@ window.SCIOS_NAVIGATE = (route, options = {}) => navigate({ kind: "route", route
 function actionDestination(action) {
   if (!action?.job_id) return { label: "Review profile", section: null, handler: () => goRoute("profile") };
   const application = applicationFor(action.job_id);
-  if (application?.state === "Interview" || application?.interview?.at) {
+  if (["Screening", "Interview", "Final stage"].includes(application?.state) || application?.interview?.at) {
     return { label: "Start preparation", section: "preparation", handler: () => openRole(action.job_id, "preparation") };
   }
   if (application?.package_ready || ["Preparing", "Ready to apply"].includes(application?.state)) {
@@ -263,16 +279,22 @@ function primaryRole() {
   const action = workspace.today.find((item) => item.job_id && roleFor(item.job_id));
   return action ? roleFor(action.job_id) : workspace.roles.find(seriousRole) || null;
 }
+function evidenceBullet(match) {
+  const requirement = candidateCopy(match?.requirement).trim();
+  const evidence = candidateCopy(match?.evidence).trim();
+  if (evidence.length >= 48) return evidence;
+  if (requirement && evidence && requirement.toLowerCase() !== evidence.toLowerCase()) {
+    return `${requirement}: ${evidence}`;
+  }
+  const signal = evidence || requirement;
+  return signal ? `Recruiter-visible evidence in ${signal}` : "";
+}
 function uniqueBullets(role) {
-  const candidates = [];
   const direct = Array.isArray(role?.strongest_matches) ? role.strongest_matches : [];
-  direct.slice(0, 2).forEach((match) => candidates.push(text(match.evidence || match.requirement)));
-  candidates.push(candidateCopy(role?.why_interview));
-  const urgency = text(role?.urgency);
-  if (urgency && !/unconfirmed/i.test(urgency)) candidates.push(urgency);
+  const candidates = [candidateCopy(role?.why_interview), ...direct.slice(0, 3).map(evidenceBullet)];
   const seen = new Set();
   return candidates
-    .map((item) => concise(item, 130))
+    .map((item) => concise(item, 190))
     .filter((item) => item && !seen.has(item.toLowerCase()) && seen.add(item.toLowerCase()))
     .slice(0, 3);
 }
@@ -297,10 +319,12 @@ function renderToday() {
   const role = primaryRole();
   const action = workspace.today.find((item) => role && String(item.job_id) === String(role.id)) || workspace.today[0] || null;
   const application = role ? applicationFor(role.id) : null;
-  const actions = workspace.today.slice(0, 3);
+  const actions = workspace.today.filter((item) => String(item.id) !== String(action?.id)).slice(0, 3);
   const compensation = role ? compensationView(role) : null;
   const bullets = role ? uniqueBullets(role) : [];
   const destination = action ? actionDestination(action) : role ? { label: "Review opportunity", handler: () => openRole(role.id) } : null;
+  const nextDeadline = deadlineView(application?.next_action_deadline, text(role?.urgency, "Timing unconfirmed"));
+  const deadlineLabel = application ? "Next action due" : "Timing";
   const heading = `<header class="today-heading"><div class="greeting"><span class="sun-symbol" aria-hidden="true">☀</span><div><h1>Good morning, ${escapeHtml(firstName())}</h1><p>Your next best move</p></div></div>${secondaryButton("Add job URL", 'data-open-import')} </header>`;
 
   const hero = role ? `<section class="impact-card">
@@ -316,9 +340,9 @@ function renderToday() {
       ${fitRing(role.fit_score)}
       <dl class="impact-facts">
         <div><dt>Interview chance</dt><dd class="positive-text">${escapeHtml(text(role.interview_band, "Unconfirmed"))}</dd></div>
-        <div><dt>Main blocker</dt><dd class="warning-text">${escapeHtml(concise(role.blocker, 70))}</dd></div>
-        <div><dt>Fastest improvement</dt><dd class="link-text">${escapeHtml(concise(role.fastest_correction || role.primary_strategy, 76))}</dd></div>
-        <div><dt>Apply by</dt><dd class="deadline-text">${escapeHtml(application?.next_action_deadline ? dueLabel(application.next_action_deadline) : text(role.urgency, "Timing unconfirmed"))}</dd></div>
+        <div><dt>Main blocker</dt><dd class="warning-text">${escapeHtml(concise(role.blocker, 180))}</dd></div>
+        <div><dt>Fastest improvement</dt><dd class="link-text">${escapeHtml(concise(role.fastest_correction || role.primary_strategy, 190))}</dd></div>
+        <div><dt>${escapeHtml(deadlineLabel)}</dt><dd class="deadline-value ${escapeHtml(nextDeadline.tone)}">${escapeHtml(nextDeadline.label)}</dd></div>
       </dl>
     </aside>
   </section>` : emptyPanel(
@@ -332,11 +356,13 @@ function renderToday() {
     return `<button class="numbered-action" data-open-action="${item.id}"><span class="action-icon tone-${(index % 3) + 1}">${icon(actionIcon(item, index), 20)}</span><span class="action-number">${index + 1}</span><span class="action-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(text(item.duration, "20"))} min · ${escapeHtml(index === 0 ? "Highest priority" : "Next priority")}</small></span><span class="action-chevron">${icon("chevron", 18)}</span></button>`;
   }).join("")}</div></section>` : "";
 
-  const activeApps = workspace.applications.filter((item) => !["Rejected", "Withdrawn", "Closed"].includes(item.state)).slice(0, 4);
-  const appRows = activeApps.length ? `<section class="dashboard-section"><div class="section-title-row"><h2>Active applications</h2><button class="text-link" data-route="applications">View all (${activeApps.length})</button></div><div class="application-table">${activeApps.map((item) => `<button class="application-table-row" data-open-application="${item.job_id}"><span class="company-logo">${escapeHtml(initials(item.company))}</span><span class="application-identity"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.company)}</small></span><span class="application-stage"><small>${escapeHtml(item.state)}</small>${applicationProgress(item)}</span><span class="application-next"><small>Next step</small><strong>${escapeHtml(concise(item.next_action, 68))}</strong></span></button>`).join("")}</div></section>` : "";
+  const allActiveApps = workspace.applications.filter((item) => !["Rejected", "Withdrawn", "Closed"].includes(item.state));
+  const activeApps = allActiveApps.slice(0, 4);
+  const appRows = activeApps.length ? `<section class="dashboard-section"><div class="section-title-row"><h2>Active applications</h2><button class="text-link" data-route="applications">View all (${allActiveApps.length})</button></div><div class="application-table">${activeApps.map((item) => `<button class="application-table-row" data-open-application="${item.job_id}"><span class="company-logo">${escapeHtml(initials(item.company))}</span><span class="application-identity"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.company)}</small></span><span class="application-stage"><small>${escapeHtml(item.state)}</small>${applicationProgress(item)}</span><span class="application-next"><small>Next step</small><strong>${escapeHtml(concise(item.next_action, 68))}</strong></span></button>`).join("")}</div></section>` : "";
 
   const nextSession = workspace.preparation.find((item) => !item.complete);
-  const preparation = nextSession ? `<section class="preparation-card"><div class="section-title-row"><h2>Preparation today</h2><button class="text-link" data-route="interviews">View plan</button></div><div class="preparation-row"><time>${escapeHtml(new Intl.DateTimeFormat("en-CH", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Zurich" }).format(new Date(nextSession.due_at)))}</time><div><strong>${escapeHtml(nextSession.competency)} — ${escapeHtml(nextSession.company || nextSession.role)}</strong><p>Focus: ${escapeHtml(concise(nextSession.prompt, 100))}</p><small>${icon("clock", 14)} ${escapeHtml(String(nextSession.duration))} min <span>·</span> Role-specific practice</small></div>${secondaryButton("Start session", `data-open-practice="${nextSession.job_id}"`)}</div></section>` : "";
+  const sessionDeadline = deadlineView(nextSession?.due_at, "No deadline");
+  const preparation = nextSession ? `<section class="preparation-card"><div class="section-title-row"><h2>Preparation today</h2><button class="text-link" data-route="interviews">View plan</button></div><div class="preparation-row"><time class="${escapeHtml(sessionDeadline.tone)}">${escapeHtml(new Intl.DateTimeFormat("en-CH", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Zurich" }).format(new Date(nextSession.due_at)))}</time><div><strong>${escapeHtml(nextSession.competency)} — ${escapeHtml(nextSession.company || nextSession.role)}</strong><p>Focus: ${escapeHtml(concise(nextSession.prompt, 125))}</p><small>${icon("clock", 14)} ${escapeHtml(String(nextSession.duration))} min <span>·</span> ${escapeHtml(sessionDeadline.label)}</small></div>${secondaryButton("Start session", `data-open-practice="${nextSession.job_id}"`)}</div></section>` : "";
 
   $("#view").innerHTML = `<div class="reference-dashboard">${heading}${hero}${actionRows}${appRows}${preparation}<footer class="leverage-note">${icon("spark", 18)}<span>Consistent focused action is the highest leverage.</span></footer></div>`;
   bindCommon();

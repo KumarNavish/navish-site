@@ -20,6 +20,71 @@ def assert_no_horizontal_overflow(page: Page) -> None:
     assert overflow <= 1, f"horizontal overflow: {overflow}px"
 
 
+def assert_no_text_clipping(page: Page) -> None:
+    clipped = page.evaluate(
+        """
+        [...document.querySelectorAll(
+          '.impact-facts dd, .attention-reasons li, .role-conversion-card aside strong, '
+          + '.role-next-action h2, .application-next strong, .pipeline-next strong, .practice-hero p'
+        )]
+          .filter((node) => node.offsetParent !== null)
+          .filter((node) => {
+            const style = getComputedStyle(node);
+            const horizontal = node.scrollWidth > node.clientWidth + 1
+              && ['hidden', 'clip'].includes(style.overflowX);
+            const vertical = node.scrollHeight > node.clientHeight + 1
+              && ['hidden', 'clip'].includes(style.overflowY);
+            return horizontal || vertical;
+          })
+          .map((node) => ({text: node.textContent.trim(), html: node.outerHTML.slice(0, 220)}))
+        """
+    )
+    assert not clipped, clipped
+
+
+def assert_bottom_content_reachable(page: Page) -> None:
+    if not page.viewport_size or page.viewport_size["width"] > 900:
+        return
+    result = page.evaluate(
+        """
+        () => {
+          const nav = document.querySelector('.mobile-nav');
+          const view = document.querySelector('#view');
+          if (!nav || !view) return {ok: false, reason: 'missing mobile navigation or view'};
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          const visibleChildren = [...view.querySelectorAll('button, a, summary, footer, section')]
+            .filter((node) => node.offsetParent !== null);
+          const last = visibleChildren.at(-1) || view;
+          const navTop = nav.getBoundingClientRect().top;
+          const lastBottom = last.getBoundingClientRect().bottom;
+          window.scrollTo(0, 0);
+          return {ok: lastBottom <= navTop + 1, navTop, lastBottom};
+        }
+        """
+    )
+    assert result["ok"], result
+
+
+def assert_keyboard_focus_visible(page: Page) -> None:
+    page.keyboard.press("Tab")
+    focus = page.evaluate(
+        """
+        () => {
+          const node = document.activeElement;
+          const style = node ? getComputedStyle(node) : null;
+          return {
+            tag: node?.tagName || '',
+            label: node?.getAttribute('aria-label') || node?.textContent?.trim() || '',
+            outlineWidth: style?.outlineWidth || '0px',
+            outlineStyle: style?.outlineStyle || 'none',
+          };
+        }
+        """
+    )
+    assert focus["tag"] in {"BUTTON", "A", "SUMMARY", "INPUT", "SELECT", "TEXTAREA"}, focus
+    assert focus["outlineStyle"] != "none" and focus["outlineWidth"] != "0px", focus
+
+
 def assert_accessible_controls(page: Page) -> None:
     unnamed_buttons = page.evaluate(
         """
@@ -59,6 +124,7 @@ def click_route(page: Page, route: str) -> None:
 def assert_active_route(page: Page, route: str) -> None:
     control = page.locator(f'{nav_scope(page)} [data-route="{route}"]')
     assert "active" in (control.get_attribute("class") or "").split()
+    assert control.get_attribute("aria-current") == "page"
 
 
 def assert_role_workspace(page: Page, job_id: int, section: str, active_route: str) -> None:
@@ -78,6 +144,7 @@ def assert_role_workspace(page: Page, job_id: int, section: str, active_route: s
 
 def screenshot(page: Page, name: str) -> None:
     assert_no_horizontal_overflow(page)
+    assert_no_text_clipping(page)
     assert_accessible_controls(page)
     page.screenshot(path=str(OUT / name), full_page=False)
     print(f"captured {name}", flush=True)
@@ -88,7 +155,12 @@ def new_page(browser: Browser, viewport: dict[str, int], console_errors: list[st
     page = context.new_page()
     page.on("console", lambda message: console_errors.append(message.text) if message.type in {"error", "warning"} else None)
     page.on("pageerror", lambda error: console_errors.append(str(error)))
-    page.on("requestfailed", lambda request: failed_requests.append(f"{request.method} {request.url}: {request.failure}"))
+    page.on(
+        "requestfailed",
+        lambda request: failed_requests.append(f"{request.method} {request.url}: {request.failure}")
+        if request.failure != "net::ERR_ABORTED"
+        else None,
+    )
     return context, page
 
 
@@ -101,34 +173,22 @@ def launch_browser(playwright):
 
 
 def import_acceptance_role(page: Page) -> int:
-    payload = {
-        "title": ROLE_TITLE,
-        "company": ROLE_COMPANY,
-        "location": "Basel, Switzerland",
-        "description": (
-            "We require Python, PyTorch, optimization, continual learning, experimental design, "
-            "Docker, CI/CD, automated testing and model evaluation. A PhD is valued. The engineer "
-            "owns reliable adaptation and evaluation systems, explains failure modes, and collaborates "
-            "with researchers and product engineers. Two years of research or engineering experience. "
-            "CHF 130,000–CHF 155,000 base salary."
-        ),
-    }
-    result = page.evaluate(
-        """
-        async (payload) => {
-          const response = await fetch('/api/jobs/import', {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload),
-          });
-          const body = await response.json();
-          if (!response.ok) throw new Error(body.detail || `Import failed (${response.status})`);
-          return body;
-        }
-        """,
-        payload,
+    page.locator('[data-open-import]:visible').first.click()
+    page.get_by_role("heading", name="Add a job URL", exact=True).wait_for()
+    page.locator('input[name="title"]').fill(ROLE_TITLE)
+    page.locator('input[name="company"]').fill(ROLE_COMPANY)
+    page.locator('input[name="location"]').fill("Basel, Switzerland")
+    page.locator('textarea[name="description"]').fill(
+        "We require Python, PyTorch, optimization, continual learning, experimental design, "
+        "Docker, CI/CD, automated testing and model evaluation. A PhD is valued. The engineer "
+        "owns reliable adaptation and evaluation systems, explains failure modes, and collaborates "
+        "with researchers and product engineers. Two years of research or engineering experience. "
+        "CHF 130,000–CHF 155,000 base salary."
     )
-    return int(result["id"])
+    page.get_by_role("button", name="Analyze role", exact=True).click()
+    page.get_by_role("heading", name=ROLE_TITLE, exact=True).wait_for(timeout=60_000)
+    assert "#role/" in page.url
+    return int(page.url.split("#role/", 1)[1].split("/", 1)[0])
 
 
 def run() -> None:
@@ -142,10 +202,13 @@ def run() -> None:
         open_private(page)
         assert page.locator(".mobile-brand").get_by_text("SCI OS", exact=True).is_visible()
         assert page.locator(".mobile-nav").is_visible()
+        assert_active_route(page, "today")
+        assert_keyboard_focus_visible(page)
         screenshot(page, "reference-01-today-mobile-390.png")
         steps.append("Authenticated reference shell rendered on mobile")
 
         job_id = import_acceptance_role(page)
+        steps.append("Add job URL flow imported and analyzed a role through the real form")
         click_route(page, "opportunities")
         page.get_by_role("heading", name="Opportunities", exact=True).wait_for()
         role = page.get_by_role("button", name=f"Open {ROLE_TITLE} at {ROLE_COMPANY}")
@@ -174,6 +237,13 @@ def run() -> None:
         screenshot(page, "reference-04-application-mobile-390.png")
         steps.append("Pursue created an evidence-linked package without external submission")
 
+        page.get_by_role("button", name="Overview", exact=True).click()
+        page.get_by_text("Application preparation is active", exact=True).wait_for()
+        assert page.get_by_role("button", name="Pursue", exact=True).count() == 0
+        assert page.locator(".role-overview-reference .ref-button.primary").count() == 0
+        assert page.locator(".role-next-action .deadline-value").count() == 1
+        steps.append("Role overview became state-aware without contradictory duplicate actions")
+
         page.get_by_role("button", name="Preparation", exact=True).click()
         page.get_by_text("Next session", exact=True).wait_for()
         assert_role_workspace(page, job_id, "preparation", "interviews")
@@ -183,7 +253,10 @@ def run() -> None:
         page.get_by_role("heading", name="Good morning, Navish", exact=True).wait_for()
         page.locator(".impact-card").wait_for()
         assert page.get_by_text("Highest impact", exact=True).is_visible()
+        assert page.get_by_text("Next action due", exact=True).is_visible()
         assert page.get_by_role("heading", name="Active applications", exact=True).is_visible()
+        assert page.locator(".impact-evidence").evaluate("(node) => getComputedStyle(node).flexDirection") == "column"
+        assert_bottom_content_reachable(page)
         screenshot(page, "reference-06-today-populated-mobile-390.png")
         steps.append("Today surfaced the high-impact role, actions, application and preparation")
         context.close(); browser.close()
@@ -193,7 +266,10 @@ def run() -> None:
         open_private(page)
         assert page.locator(".workspace-nav").is_visible()
         assert page.get_by_text("SWISS CAREER INTELLIGENCE", exact=True).is_visible()
+        assert_active_route(page, "today")
+        assert_keyboard_focus_visible(page)
         page.locator(".impact-card").wait_for()
+        assert page.locator(".impact-evidence").bounding_box()["width"] >= 280
         screenshot(page, "reference-07-today-desktop-1440.png")
         click_route(page, "opportunities")
         page.get_by_role("button", name=f"Open {ROLE_TITLE} at {ROLE_COMPANY}").click()
@@ -206,6 +282,13 @@ def run() -> None:
         page.get_by_text("Recruiter case", exact=True).wait_for()
         assert_role_workspace(page, job_id, "application", "applications")
         screenshot(page, "reference-09-application-desktop-1440.png")
+        click_route(page, "network")
+        page.get_by_role("heading", name="Network", exact=True).wait_for()
+        assert_active_route(page, "network")
+        click_route(page, "profile")
+        page.get_by_role("heading", name="Profile", exact=True).wait_for()
+        assert_active_route(page, "profile")
+        steps.append("All desktop primary routes rendered with correct navigation state")
         context.close(); browser.close()
 
         for name, viewport in (("narrow-320x700", {"width": 320, "height": 700}), ("tablet-768x1024", {"width": 768, "height": 1024})):
@@ -214,6 +297,7 @@ def run() -> None:
             open_private(page)
             assert page.locator(".mobile-nav").is_visible()
             page.locator(".impact-card").wait_for()
+            assert_bottom_content_reachable(page)
             screenshot(page, f"reference-10-{name}.png")
             steps.append(f"{name} retained the reference dashboard without overflow")
             context.close(); browser.close()

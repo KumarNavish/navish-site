@@ -15,6 +15,70 @@ def visible_text(locator: Locator, timeout: int = 60_000) -> str:
     return value
 
 
+def assert_no_text_clipping(page: Page) -> None:
+    clipped = page.evaluate(
+        """
+        [...document.querySelectorAll(
+          '.impact-facts dd, .attention-reasons li, .role-conversion-card aside strong, '
+          + '.role-next-action h2, .application-next strong, .pipeline-next strong, .practice-hero p'
+        )]
+          .filter((node) => node.offsetParent !== null)
+          .filter((node) => {
+            const style = getComputedStyle(node);
+            return (node.scrollWidth > node.clientWidth + 1 && ['hidden', 'clip'].includes(style.overflowX))
+              || (node.scrollHeight > node.clientHeight + 1 && ['hidden', 'clip'].includes(style.overflowY));
+          })
+          .map((node) => ({text: node.textContent.trim(), html: node.outerHTML.slice(0, 220)}))
+        """
+    )
+    assert not clipped, clipped
+
+
+def assert_accessible_controls(page: Page) -> None:
+    problems = page.evaluate(
+        """
+        () => ({
+          unnamedButtons: [...document.querySelectorAll('button:not([hidden])')]
+            .filter((node) => node.offsetParent !== null)
+            .filter((node) => !node.textContent.trim() && !node.getAttribute('aria-label') && !node.title)
+            .map((node) => node.outerHTML.slice(0, 180)),
+          unlabeledFields: [...document.querySelectorAll('input:not([hidden]), select:not([hidden]), textarea:not([hidden])')]
+            .filter((node) => node.offsetParent !== null)
+            .filter((node) => !node.getAttribute('aria-label') && !node.closest('label')
+              && !(node.id && document.querySelector(`label[for="${node.id}"]`)))
+            .map((node) => node.outerHTML.slice(0, 180)),
+        })
+        """
+    )
+    assert not problems["unnamedButtons"], problems
+    assert not problems["unlabeledFields"], problems
+
+
+def assert_bottom_content_reachable(page: Page, width: int) -> None:
+    if width > 900:
+        return
+    result = page.evaluate(
+        """
+        () => {
+          const nav = document.querySelector('.mobile-nav');
+          const view = document.querySelector('#view');
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          const visibleChildren = [...view.querySelectorAll('button, a, summary, footer, section')]
+            .filter((node) => node.offsetParent !== null);
+          const last = visibleChildren.at(-1) || view;
+          const payload = {
+            navTop: nav?.getBoundingClientRect().top ?? -1,
+            lastBottom: last?.getBoundingClientRect().bottom ?? -1,
+          };
+          payload.ok = payload.navTop > 0 && payload.lastBottom <= payload.navTop + 1;
+          window.scrollTo(0, 0);
+          return payload;
+        }
+        """
+    )
+    assert result["ok"], result
+
+
 def assert_no_clutter(page: Page) -> None:
     assert page.locator("#detail-drawer").is_hidden()
     for selector in (
@@ -78,6 +142,8 @@ def run_viewport(
         "Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth"
     )
     assert overflow <= 1, overflow
+    assert_no_text_clipping(page)
+    assert_accessible_controls(page)
     assert page.locator(".impact-card").count() == 1
     assert page.locator(".impact-card .ref-button.primary").count() == 1
     visible_wordmark = page.locator(
@@ -85,6 +151,19 @@ def run_viewport(
     ).filter(has_text="SCI OS")
     assert visible_wordmark.count() == 1
     assert visible_wordmark.first.is_visible()
+    nav_scope = ".mobile-nav" if width <= 900 else ".workspace-nav-list"
+    active_today = page.locator(f'{nav_scope} [data-route="today"]')
+    assert "active" in (active_today.get_attribute("class") or "").split()
+    assert active_today.get_attribute("aria-current") == "page"
+    if width <= 900:
+        assert page.locator(".impact-evidence").evaluate("(node) => getComputedStyle(node).flexDirection") == "column"
+    else:
+        assert page.locator(".impact-evidence").bounding_box()["width"] >= 280
+    page.locator('[data-open-import]:visible').first.click()
+    visible_text(page.get_by_role("heading", name="Add a job URL", exact=True))
+    assert_accessible_controls(page)
+    page.get_by_role("button", name="Close").click()
+    assert_bottom_content_reachable(page, width)
     page.screenshot(path=str(out / f"{name}-01-today.png"))
     checkpoints.append("today")
 
@@ -100,6 +179,10 @@ def run_viewport(
     assert page.locator(".role-overview-reference").count() == 1
     assert page.locator(".role-conversion-card").count() == 1
     assert page.get_by_text("Main blocker", exact=True).is_visible()
+    assert page.locator(".role-next-action .deadline-value").count() == 1
+    assert page.locator(".role-header-side .ref-button.primary").count() <= 1
+    assert page.get_by_role("button", name="Pursue", exact=True).count() == 0
+    assert_no_text_clipping(page)
     assert "#role/" in page.url
     role_id = page.url.split("#role/", 1)[1].split("/", 1)[0]
     page.screenshot(path=str(out / f"{name}-02-role-overview.png"))
@@ -118,6 +201,8 @@ def run_viewport(
     assert page.locator(".application-reference").count() == 1
     application_next = visible_text(page.locator(".application-lead h2"))
     assert_no_clutter(page)
+    assert_no_text_clipping(page)
+    assert_accessible_controls(page)
     page.screenshot(path=str(out / f"{name}-03-role-application.png"))
     checkpoints.append("role_application")
 
@@ -128,6 +213,7 @@ def run_viewport(
     assert page.locator(".role-practice-reference").count() == 1
     practice_title = visible_text(page.locator(".practice-hero h2"))
     assert_no_clutter(page)
+    assert_no_text_clipping(page)
     page.screenshot(path=str(out / f"{name}-04-role-practice.png"))
     checkpoints.append("role_practice")
 
@@ -140,6 +226,15 @@ def run_viewport(
     visible_text(page.get_by_role("heading", name="Preparation", exact=True))
     page.screenshot(path=str(out / f"{name}-06-prepare.png"))
     checkpoints.append("prepare")
+
+    if width > 900:
+        page.locator('[data-route="network"]:visible').first.click()
+        visible_text(page.get_by_role("heading", name="Network", exact=True))
+        checkpoints.append("network")
+    page.locator('[data-route="profile"]:visible').first.click()
+    visible_text(page.get_by_role("heading", name="Profile", exact=True))
+    checkpoints.append("profile")
+    assert_accessible_controls(page)
 
     page.reload(wait_until="networkidle", timeout=180_000)
     page.locator("#app:not([hidden])").wait_for(timeout=60_000)
@@ -159,6 +254,9 @@ def run_viewport(
         "practice_title": practice_title,
         "checkpoints": checkpoints,
         "session_persisted_after_reload": True,
+        "text_clipping_detected": False,
+        "accessible_controls": True,
+        "bottom_content_reachable": True,
     }
     report["console_warnings_or_errors"].extend(console)
     report["page_errors"].extend(page_errors)

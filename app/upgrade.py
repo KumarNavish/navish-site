@@ -807,8 +807,9 @@ def install(legacy: Any) -> SimpleNamespace:
         else:
             job.status = "reject"
             app_row = db.scalar(select(legacy.Application).where(legacy.Application.job_id == job.id))
-            if app_row and app_row.state in {"Suggested", "Investigating"}:
+            if app_row and app_row.state not in {"Applied", "Screening", "Interview", "Final stage", "Offer"}:
                 app_row.state = "Withdrawn"
+                app_row.next_action = "Stopped pursuing; no external action was executed."
         prioritize(db, user.id)
         db.commit()
         return {"ok": True, "decision": decision, "external_action_executed": False}
