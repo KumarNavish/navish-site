@@ -1,0 +1,133 @@
+name: Fix final polish mobile end reachability check
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  fix:
+    if: startsWith(github.event.issue.title, '[FIX FINAL POLISH V14 MOBILE END]')
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-final-polish-mobile-end.db
+      SCIOS_WORKER_ENABLED: "false"
+      SCIOS_SESSION_SECURE_COOKIE: "false"
+      SCIOS_INTERNAL_SECRET: final-polish-mobile-end-secret
+      SCIOS_ACCESS_TOKEN: ci-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/final-polish-v14
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12.8
+          cache: pip
+
+      - name: Replace the mobile bottom-content assertion with a real scroll-and-occlusion check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('tests/e2e_live.py')
+          text = path.read_text()
+          start = text.index('def assert_bottom_content_reachable')
+          match = re.search(r'\n(?=def [A-Za-z_])', text[start + 1:])
+          if not match:
+              raise SystemExit('Unable to locate the next top-level function')
+          end = start + 1 + match.start() + 1
+          replacement = '''def assert_bottom_content_reachable(page: Page) -> None:
+              """Verify final actionable content scrolls fully above fixed mobile navigation."""
+              page.evaluate(
+                  """
+                  (() => {
+                    const root = document.querySelector('#view');
+                    if (!root) return;
+                    const candidates = [...root.querySelectorAll(
+                      'button, a[href], input, select, textarea, summary, [tabindex], h1, h2, h3, p, li'
+                    )].filter((node) => {
+                      const style = getComputedStyle(node);
+                      const rect = node.getBoundingClientRect();
+                      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                    });
+                    const last = candidates.at(-1) || root.lastElementChild || root;
+                    last.scrollIntoView({block: 'end', inline: 'nearest'});
+                    window.scrollBy(0, 2);
+                  })()
+                  """
+              )
+              page.wait_for_timeout(120)
+              result = page.evaluate(
+                  """
+                  (() => {
+                    const root = document.querySelector('#view');
+                    const nav = document.querySelector('.mobile-nav');
+                    if (!root) return {ok: false, reason: 'missing #view'};
+                    const candidates = [...root.querySelectorAll(
+                      'button, a[href], input, select, textarea, summary, [tabindex], h1, h2, h3, p, li'
+                    )].filter((node) => {
+                      const style = getComputedStyle(node);
+                      const rect = node.getBoundingClientRect();
+                      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                    });
+                    const last = candidates.at(-1) || root.lastElementChild || root;
+                    const lastRect = last.getBoundingClientRect();
+                    const navVisible = nav && getComputedStyle(nav).display !== 'none' && nav.getBoundingClientRect().height > 0;
+                    const navTop = navVisible ? nav.getBoundingClientRect().top : innerHeight;
+                    const viewportBottom = Math.min(navTop, innerHeight);
+                    const maxScroll = Math.max(0, document.documentElement.scrollHeight - innerHeight);
+                    const atDocumentEnd = Math.abs(scrollY - maxScroll) <= 3;
+                    return {
+                      ok: atDocumentEnd && lastRect.bottom <= viewportBottom - 4,
+                      navTop,
+                      lastBottom: lastRect.bottom,
+                      scrollY,
+                      maxScroll,
+                      lastText: (last.textContent || '').trim().slice(0, 120),
+                    };
+                  })()
+                  """
+              )
+              assert result["ok"], result
+
+
+          '''
+          # Remove indentation introduced by the workflow's Python heredoc while preserving the function body.
+          replacement = '\n'.join(line[10:] if line.startswith('          ') else line for line in replacement.splitlines()) + '\n'
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+
+      - name: Verify deterministic suite
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m py_compile tests/e2e_live.py app.py app/*.py
+          node --check static/ui.js
+          node --check static/personal-workspace.js
+          node --check static/workspace-detail.js
+          node --check static/workspace-access.js
+          node --check static/final-polish-v14.js
+          pytest -q
+
+      - name: Commit repair
+        run: |
+          git config user.name 'Swiss Career Intelligence QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git add tests/e2e_live.py
+          git commit -m 'Verify mobile content clears fixed navigation'
+          git push origin HEAD:ux/final-polish-v14
+
+      - name: Publish result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Final polish mobile-end repair completed successfully. Workflow run ID: ${{ github.run_id }}."
