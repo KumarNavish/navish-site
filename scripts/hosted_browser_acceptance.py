@@ -78,7 +78,11 @@ def run_viewport(
     assert overflow <= 1, overflow
     assert page.locator(".impact-card").count() == 1
     assert page.locator(".impact-card .ref-button.primary").count() == 1
-    assert page.get_by_text("SCI OS", exact=True).is_visible()
+    visible_wordmark = page.locator(
+        ".workspace-brand:visible strong, .mobile-brand:visible span"
+    ).filter(has_text="SCI OS")
+    assert visible_wordmark.count() == 1
+    assert visible_wordmark.first.is_visible()
     page.screenshot(path=str(out / f"{name}-01-today.png"))
     checkpoints.append("today")
 
