@@ -1,7 +1,8 @@
 "use strict";
 
 (() => {
-  const selector = ".attention-reasons li, .opportunity-copy > p, .role-conversion-main li";
+  const rationaleSelector = ".attention-reasons li, .opportunity-copy > p, .role-conversion-main li";
+  const sourceSelector = ".impact-meta, .opportunity-tags, .source-line";
 
   function completeFirstClause(value) {
     const normalized = String(value || "").replace(/\s+/g, " ").trim();
@@ -10,7 +11,7 @@
     return `${normalized.slice(0, contrast).replace(/[,:;\s]+$/, "")}.`;
   }
 
-  function polishNode(node) {
+  function polishRationale(node) {
     if (!(node instanceof HTMLElement) || node.dataset.copyPolished === "true") return;
     const original = node.textContent || "";
     const revised = completeFirstClause(original);
@@ -27,9 +28,24 @@
     node.dataset.copyPolished = "true";
   }
 
+  function polishSourceRecency(node) {
+    if (!(node instanceof Element)) return;
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    let textNode = walker.nextNode();
+    while (textNode) {
+      textNode.textContent = textNode.textContent.replace(
+        /\b(Verified|Retrieved|Posted) Due now\b/g,
+        "$1 now",
+      );
+      textNode = walker.nextNode();
+    }
+  }
+
   function polish(root = document) {
-    if (root instanceof Element && root.matches(selector)) polishNode(root);
-    root.querySelectorAll?.(selector).forEach(polishNode);
+    if (root instanceof Element && root.matches(rationaleSelector)) polishRationale(root);
+    root.querySelectorAll?.(rationaleSelector).forEach(polishRationale);
+    if (root instanceof Element && root.matches(sourceSelector)) polishSourceRecency(root);
+    root.querySelectorAll?.(sourceSelector).forEach(polishSourceRecency);
   }
 
   const start = () => {
