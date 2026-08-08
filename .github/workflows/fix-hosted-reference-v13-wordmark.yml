@@ -1,0 +1,86 @@
+name: Fix hosted reference dashboard wordmark selector
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  fix:
+    if: github.event.issue.user.login == 'KumarNavish' && contains(github.event.issue.title, '[FIX HOSTED REFERENCE V13 WORDMARK]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-hosted-reference-v13.db
+      SCIOS_ENVIRONMENT: development
+      SCIOS_WORKER_ENABLED: 'false'
+      SCIOS_SESSION_SECURE_COOKIE: 'false'
+      SCIOS_INTERNAL_SECRET: hosted-reference-v13-secret
+      SCIOS_ACCESS_TOKEN: ci-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+      SCIOS_TEST_MODE: 'true'
+      SCIOS_TEST_ACCESS_TOKENS: ci-private-access,workspace-private-access
+      OPENAI_ENABLED: 'false'
+      PAID_SERVICES_ALLOWED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: pip
+
+      - name: Scope visible wordmark in hosted acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/hosted_browser_acceptance.py')
+          source = path.read_text()
+          old = '    assert page.get_by_text("SCI OS", exact=True).is_visible()\n'
+          new = '''    visible_wordmark = page.locator(\n        ".workspace-brand:visible strong, .mobile-brand:visible span"\n    ).filter(has_text="SCI OS")\n    assert visible_wordmark.count() == 1\n    assert visible_wordmark.first.is_visible()\n'''
+          if old not in source:
+              raise SystemExit('expected ambiguous hosted wordmark locator not found')
+          path.write_text(source.replace(old, new, 1))
+          PY
+
+      - name: Verify source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m compileall -q app.py app scripts tests
+          for file in static/*.js; do
+            if grep -Eq '^(import|export) ' "$file"; then
+              node --input-type=module --check < "$file"
+            else
+              node --check "$file"
+            fi
+          done
+          pytest -q
+
+      - name: Commit hosted acceptance repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Swiss Career Intelligence QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/hosted_browser_acceptance.py
+          git commit -m 'Scope the hosted SCI OS wordmark check to the visible shell'
+          git push origin HEAD:main
+
+      - name: Publish result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Hosted reference v13 wordmark repair: ${{ job.status }}. Workflow run ID: ${{ github.run_id }}."
