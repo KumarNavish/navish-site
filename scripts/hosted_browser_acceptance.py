@@ -22,6 +22,8 @@ def assert_no_clutter(page: Page) -> None:
         ".role-continuity-summary",
         ".detail-summary-grid",
         ".decision-evidence",
+        ".primary-move",
+        ".detail-summary-grid",
     ):
         assert page.locator(selector).count() == 0, f"obsolete UI found: {selector}"
 
@@ -66,7 +68,7 @@ def run_viewport(
     response = page.goto(f"{origin}/#access={token}", wait_until="networkidle", timeout=180_000)
     assert response and response.status == 200
     page.locator("#app:not([hidden])").wait_for(timeout=60_000)
-    visible_text(page.get_by_role("heading", name="Today", exact=True))
+    visible_text(page.get_by_role("heading", name="Good morning, Navish", exact=True))
     assert page.locator("#auth").is_hidden()
     body_length = len(page.locator("body").inner_text().strip())
     assert body_length > 100
@@ -74,8 +76,9 @@ def run_viewport(
         "Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth"
     )
     assert overflow <= 1, overflow
-    assert page.locator(".primary-move").count() == 1
-    assert page.locator(".primary-move .button.primary").count() <= 1
+    assert page.locator(".impact-card").count() == 1
+    assert page.locator(".impact-card .ref-button.primary").count() == 1
+    assert page.get_by_text("SCI OS", exact=True).is_visible()
     page.screenshot(path=str(out / f"{name}-01-today.png"))
     checkpoints.append("today")
 
@@ -86,10 +89,11 @@ def run_viewport(
     role.click()
     page.locator(".object-page").wait_for(timeout=60_000)
     back_label = visible_text(page.locator("#embedded-back"))
-    role_title = visible_text(page.locator(".detail-header h1"))
+    role_title = visible_text(page.locator(".reference-role-header h1"))
     assert_no_clutter(page)
-    assert page.locator(".role-decision-flow").count() == 1
-    assert page.locator(".role-action-line .button").count() == 1
+    assert page.locator(".role-overview-reference").count() == 1
+    assert page.locator(".role-conversion-card").count() == 1
+    assert page.get_by_text("Main blocker", exact=True).is_visible()
     assert "#role/" in page.url
     role_id = page.url.split("#role/", 1)[1].split("/", 1)[0]
     page.screenshot(path=str(out / f"{name}-02-role-overview.png"))
@@ -105,18 +109,18 @@ def run_viewport(
     visible_text(page.get_by_role("button", name="← Applications"))
     assert page.locator("#route-title").inner_text() == "Application"
     assert page.locator('.detail-tabs [data-detail-tab="application"].active').count() == 1
-    assert page.locator(".application-flow").count() == 1
-    application_next = visible_text(page.locator(".compact-next-action strong"))
+    assert page.locator(".application-reference").count() == 1
+    application_next = visible_text(page.locator(".application-lead h2"))
     assert_no_clutter(page)
     page.screenshot(path=str(out / f"{name}-03-role-application.png"))
     checkpoints.append("role_application")
 
     page.locator('.detail-tabs [data-detail-tab="preparation"]:visible').click()
     page.locator('.detail-tabs [data-detail-tab="preparation"].active').wait_for(timeout=60_000)
-    assert page.locator("#route-title").inner_text() == "Practice"
+    assert page.locator("#route-title").inner_text() == "Preparation"
     assert page.url.endswith("/preparation")
-    assert page.locator(".practice-flow").count() == 1
-    practice_title = visible_text(page.locator(".practice-focus h2"))
+    assert page.locator(".role-practice-reference").count() == 1
+    practice_title = visible_text(page.locator(".practice-hero h2"))
     assert_no_clutter(page)
     page.screenshot(path=str(out / f"{name}-04-role-practice.png"))
     checkpoints.append("role_practice")
@@ -127,7 +131,7 @@ def run_viewport(
     checkpoints.append("applications")
 
     page.locator('[data-route="interviews"]:visible').first.click()
-    visible_text(page.get_by_role("heading", name="Practice", exact=True))
+    visible_text(page.get_by_role("heading", name="Preparation", exact=True))
     page.screenshot(path=str(out / f"{name}-06-prepare.png"))
     checkpoints.append("prepare")
 

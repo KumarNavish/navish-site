@@ -6,52 +6,84 @@
   <meta name="theme-color" content="#ffffff">
   <meta name="description" content="A private, evidence-bounded Swiss hiring workspace for Navish Kumar.">
   <title>Swiss Career Intelligence</title>
-  <link rel="manifest" href="/assets/manifest-workspace.webmanifest?v=workspace1">
+  <link rel="manifest" href="/assets/manifest-workspace.webmanifest?v=reference1">
   <link rel="icon" href="/assets/icon.svg">
   <link rel="stylesheet" href="/assets/live.css?v=live9">
-  <link rel="stylesheet" href="/assets/workspace-white.css?v=clarity12">
+  <link rel="stylesheet" href="/assets/workspace-white.css?v=reference1">
 </head>
 <body>
   <div id="auth" class="auth-surface"></div>
   <div id="app" class="personal-workspace" hidden>
     <aside id="sidebar" class="workspace-nav" aria-label="Primary navigation">
       <button class="workspace-brand" data-route="today" aria-label="Open Today">
-        <span class="workspace-mark" aria-hidden="true">N</span>
-        <span><strong>Hiring</strong><small>Navish Kumar</small></span>
+        <span class="brand-swiss" aria-hidden="true"><span></span></span>
+        <span class="brand-copy"><strong>SCI OS</strong><small>SWISS CAREER INTELLIGENCE</small></span>
+        <svg class="brand-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
       </button>
+
       <nav class="workspace-nav-list">
-        <button data-route="today"><span>Today</span></button>
-        <button data-route="opportunities"><span>Opportunities</span></button>
-        <button data-route="applications"><span>Applications</span></button>
-        <button data-route="interviews"><span>Practice</span></button>
+        <button data-route="today">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-7h6v7"/></svg>
+          <span>Today</span>
+        </button>
+        <button data-route="opportunities">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+          <span>Opportunities</span>
+        </button>
+        <button data-route="applications">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 12h20"/></svg>
+          <span>Applications</span>
+        </button>
+        <button data-route="interviews">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg>
+          <span>Preparation</span>
+        </button>
+        <button data-route="network">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Network</span>
+        </button>
+        <button data-route="profile">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          <span>Profile</span>
+        </button>
       </nav>
+
       <button class="workspace-profile-link" data-route="profile">
         <span class="profile-avatar">NK</span>
-        <span><strong>Navish Kumar</strong><small>Profile</small></span>
+        <span><strong>Navish Kumar</strong><small>PhD Student</small></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
       </button>
     </aside>
-    <div id="sidebar-scrim" class="nav-scrim" hidden></div>
 
     <div class="workspace-frame">
+      <header class="mobile-header">
+        <button class="mobile-brand" data-route="today" aria-label="Open Today">
+          <span class="brand-swiss" aria-hidden="true"><span></span></span>
+          <span>SCI OS</span>
+        </button>
+        <button class="icon-button mobile-add-job" type="button" data-open-import aria-label="Add job URL">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </header>
       <div class="route-state sr-only" aria-live="polite">
         <strong id="route-title">Today</strong>
-        <span id="route-subtitle">Your next move</span>
+        <span id="route-subtitle">Your next best move</span>
       </div>
       <main class="workspace-main"><section id="view" aria-live="polite"></section></main>
     </div>
 
     <nav class="mobile-nav" aria-label="Primary navigation">
-      <button data-route="today"><span>Today</span></button>
-      <button data-route="opportunities"><span>Roles</span></button>
-      <button data-route="applications"><span>Apply</span></button>
-      <button data-route="interviews"><span>Practice</span></button>
-      <button data-route="profile"><span>Profile</span></button>
+      <button data-route="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span>Today</span></button>
+      <button data-route="opportunities"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>Roles</span></button>
+      <button data-route="applications"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M2 12h20"/></svg><span>Apply</span></button>
+      <button data-route="interviews"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg><span>Prepare</span></button>
+      <button data-route="profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Profile</span></button>
     </nav>
   </div>
 
   <dialog id="dialog"><div id="dialog-body"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/assets/workspace-request-queue.js?v=workspace4"></script>
-  <script src="/assets/workspace-access.js?v=clarity12" defer></script>
+  <script src="/assets/workspace-access.js?v=reference1" defer></script>
 </body>
 </html>
