@@ -1,7 +1,7 @@
 {
-  "tested_commit": "a2d4b26bee669cb7ed6256882f866822f922d53f",
+  "tested_commit": "86e02e73955dfd2a87b50918d2c470cf9f338176",
   "workflow": "Production validation",
-  "recorded_at_utc": "2026-08-07T21:09:15.265110+00:00",
+  "recorded_at_utc": "2026-08-08T09:06:27.984491+00:00",
   "result": "success",
   "python": "3.12.8",
   "zero_cost_mode": {
@@ -13,8 +13,8 @@
     "python_compile": [],
     "node_all_static_modules": [],
     "pytest": [
-      "........................................                                 [100%]",
-      "40 passed in 10.95s"
+      ".........................................                                [100%]",
+      "41 passed in 6.37s"
     ]
   }
 }
