@@ -57,22 +57,49 @@ def assert_accessible_controls(page: Page) -> None:
 def assert_bottom_content_reachable(page: Page, width: int) -> None:
     if width > 900:
         return
+    page.evaluate(
+        """
+        () => {
+          document.documentElement.dataset.qaScrollBehavior =
+            document.documentElement.style.scrollBehavior || '';
+          document.documentElement.style.scrollBehavior = 'auto';
+          const height = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+          window.scrollTo({top: height, behavior: 'auto'});
+        }
+        """
+    )
+    page.wait_for_function(
+        """
+        () => {
+          const height = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+          const maximum = Math.max(0, height - window.innerHeight);
+          return Math.abs(window.scrollY - maximum) <= 2;
+        }
+        """,
+        timeout=10_000,
+    )
     result = page.evaluate(
         """
         () => {
           const nav = document.querySelector('.mobile-nav');
           const view = document.querySelector('#view');
-          window.scrollTo(0, document.documentElement.scrollHeight);
+          if (!nav || !view) return {ok: false, reason: 'missing mobile navigation or view'};
           const visibleChildren = [...view.querySelectorAll('button, a, summary, footer, section')]
             .filter((node) => node.offsetParent !== null);
           const last = visibleChildren.at(-1) || view;
-          const payload = {
-            navTop: nav?.getBoundingClientRect().top ?? -1,
-            lastBottom: last?.getBoundingClientRect().bottom ?? -1,
-          };
-          payload.ok = payload.navTop > 0 && payload.lastBottom <= payload.navTop + 1;
-          window.scrollTo(0, 0);
-          return payload;
+          const navTop = nav.getBoundingClientRect().top;
+          const lastBottom = last.getBoundingClientRect().bottom;
+          return {ok: lastBottom <= navTop + 1, navTop, lastBottom, scrollY: window.scrollY};
+        }
+        """
+    )
+    page.evaluate(
+        """
+        () => {
+          window.scrollTo({top: 0, behavior: 'auto'});
+          document.documentElement.style.scrollBehavior =
+            document.documentElement.dataset.qaScrollBehavior || '';
+          delete document.documentElement.dataset.qaScrollBehavior;
         }
         """
     )
