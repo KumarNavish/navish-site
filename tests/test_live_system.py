@@ -166,6 +166,28 @@ def test_private_mobile_workflow_and_security(client: TestClient, monkeypatch: p
     assert blocked.status_code == 403
 
 
+def test_rejecting_a_prepared_role_withdraws_the_unsubmitted_application(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(intelligence, "fetch_source", fake_source)
+    authenticate(client)
+    runtime.scan_sources("CI stop pursuing")
+    role = client.get("/api/live/roles").json()[0]
+
+    pursue = client.post(f"/api/live/roles/{role['id']}/decision", json={"decision": "pursue"})
+    assert pursue.status_code == 200
+    prepared = next(row for row in client.get("/api/live/applications").json() if row["job_id"] == role["id"])
+    assert prepared["package_ready"] is True
+    assert prepared["state"] == "Preparing"
+
+    reject = client.post(f"/api/live/roles/{role['id']}/decision", json={"decision": "reject"})
+    assert reject.status_code == 200
+    assert reject.json()["external_action_executed"] is False
+    with legacy.SessionLocal() as db:
+        withdrawn = db.scalar(select(legacy.Application).where(legacy.Application.job_id == role["id"]))
+        assert withdrawn is not None
+        assert withdrawn.state == "Withdrawn"
+        assert withdrawn.next_action == "Stopped pursuing; no external action was executed."
+
+
 def test_orphan_preparation_is_not_rendered_as_a_generic_role(client: TestClient) -> None:
     authenticate(client)
     with legacy.SessionLocal() as db:

@@ -119,6 +119,17 @@ export function formatRelative(value) {
   return minutes >= 0 ? `in ${days} day${days === 1 ? "" : "s"}` : `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+export function deadlineView(value, fallback = "No deadline confirmed") {
+  if (!value) return { label: fallback, tone: "neutral", overdue: false };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { label: fallback, tone: "neutral", overdue: false };
+  const deltaMs = date.getTime() - Date.now();
+  const formatted = formatDate(value, true);
+  if (deltaMs < -60_000) return { label: `Overdue · ${formatted}`, tone: "overdue", overdue: true };
+  if (deltaMs <= 48 * 60 * 60 * 1000) return { label: `Due soon · ${formatted}`, tone: "soon", overdue: false };
+  return { label: `Due ${formatted}`, tone: "scheduled", overdue: false };
+}
+
 export function range(values, suffix = "%") {
   return Array.isArray(values) && values.length === 2
     ? `${escapeHtml(values[0])}–${escapeHtml(values[1])}${suffix}`
@@ -168,7 +179,7 @@ export function emptyState(title, message, action = "") {
 }
 
 export function errorState(error, retry = true) {
-  return `<div class="error-state"><div>${icon("alert", 22)}</div><div><h2>Unable to load this view</h2><p>${escapeHtml(error.message || error)}</p>${retry ? '<button class="button secondary" data-retry-view>Retry</button>' : ""}</div></div>`;
+  return `<div class="error-state"><div>${icon("alert", 22)}</div><div><h2>Unable to load this view</h2><p>${escapeHtml(error.message || error)}</p>${retry ? '<button class="ref-button secondary" data-retry-view>Retry</button>' : ""}</div></div>`;
 }
 
 export function pageHeader(title, description, action = "") {
@@ -197,9 +208,17 @@ export function setTopbar(routeName) {
 export function showDialog(content, { className = "" } = {}) {
   const dialog = $("#dialog");
   const body = $("#dialog-body");
+  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   body.className = className;
   body.innerHTML = content;
+  const restoreFocus = () => {
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+  };
+  dialog.addEventListener("close", restoreFocus, { once: true });
   dialog.showModal();
+  requestAnimationFrame(() => {
+    body.querySelector('input, textarea, select, button:not([disabled]), a[href], summary')?.focus({ preventScroll: true });
+  });
   const close = () => dialog.close();
   $$('[data-close-dialog]', body).forEach((control) => control.addEventListener("click", close));
   return { dialog, body, close };

@@ -2,7 +2,7 @@
 
 import {
   $, $$, api, copyText, escapeHtml, formatDate, formatRelative, icon,
-  showDialog, toast,
+  showDialog, toast, deadlineView, dateTimeLocalValue,
 } from "./ui.js";
 
 const TABS = [["overview", "Overview"], ["application", "Application"], ["preparation", "Preparation"]];
@@ -33,11 +33,14 @@ function formatMoney(amount) {
     ? new Intl.NumberFormat("en-CH", { maximumFractionDigits: 0 }).format(numeric)
     : "";
 }
+function normalizeSwissNumberSeparators(input) {
+  return value(input, "").replace(/(\d)[’'‘](?=\d{3}\b)/g, "$1’");
+}
 function compensationView(role) {
   const compensation = role?.compensation || {};
   const low = formatMoney(compensation.low);
   const high = formatMoney(compensation.high);
-  const range = low && high ? `CHF ${low}–${high}` : value(compensation.label, "Compensation unresolved");
+  const range = normalizeSwissNumberSeparators(low && high ? `CHF ${low}–${high}` : value(compensation.label, "Compensation unresolved"));
   const type = value(compensation.type, "").toLowerCase();
   if (type.includes("published base")) return { label: `${range} base`, note: "Employer-published" };
   if (type.includes("published total")) return { label: `${range} total`, note: "Employer-published; base unconfirmed" };
@@ -56,15 +59,20 @@ function fitRing(score) {
 function stageOptions(selected) {
   return APPLICATION_STATES.map((stage) => `<option value="${escapeHtml(stage)}" ${stage === selected ? "selected" : ""}>${escapeHtml(stage)}</option>`).join("");
 }
+function evidenceReason(item) {
+  const requirement = candidateCopy(item?.requirement).trim();
+  const evidence = candidateCopy(item?.evidence).trim();
+  if (evidence.length >= 48) return evidence;
+  if (requirement && evidence && requirement.toLowerCase() !== evidence.toLowerCase()) return `${requirement}: ${evidence}`;
+  const signal = evidence || requirement;
+  return signal ? `Recruiter-visible evidence in ${signal}` : "";
+}
 function uniqueReasons(role, application) {
-  const values = [];
   const direct = Array.isArray(role.strongest_matches) ? role.strongest_matches : [];
-  direct.slice(0, 2).forEach((item) => values.push(item.evidence || item.requirement));
   const top = Array.isArray(application?.package?.top_reasons) ? application.package.top_reasons : [];
-  values.push(...top);
-  values.push(candidateCopy(role.why_interview));
+  const values = [...top, candidateCopy(role.why_interview), ...direct.slice(0, 3).map(evidenceReason)];
   const seen = new Set();
-  return values.map((item) => concise(candidateCopy(item), 145)).filter((item) => item && !seen.has(item.toLowerCase()) && seen.add(item.toLowerCase())).slice(0, 3);
+  return values.map((item) => concise(candidateCopy(item), 190)).filter((item) => item && !seen.has(item.toLowerCase()) && seen.add(item.toLowerCase())).slice(0, 3);
 }
 function primaryAction(role, application, tab) {
   if (tab === "preparation") return "";
@@ -74,11 +82,17 @@ function primaryAction(role, application, tab) {
     if (application.state === "Ready to apply") return `<button class="ref-button primary" data-confirm-submission><span>Record submission</span>${icon("arrow", 18)}</button>`;
     return "";
   }
-  if (application?.package_ready) return `<button class="ref-button primary" data-detail-tab="application"><span>Review package</span>${icon("arrow", 18)}</button>`;
+  if (application?.package_ready) {
+    if (["Screening", "Interview", "Final stage"].includes(application.state)) {
+      return `<button class="ref-button primary" data-detail-tab="preparation"><span>Open preparation</span>${icon("arrow", 18)}</button>`;
+    }
+    const label = application.state === "Ready to apply" ? "Final review" : application.state === "Applied" ? "Track application" : "Review package";
+    return `<button class="ref-button primary" data-detail-tab="application"><span>${label}</span>${icon("arrow", 18)}</button>`;
+  }
   return `<button class="ref-button primary" data-role-decision="pursue"><span>Prepare application</span>${icon("arrow", 18)}</button>`;
 }
 function tabs(tab) {
-  return `<nav class="detail-tabs" aria-label="Role workspace sections">${TABS.map(([id, label]) => `<button type="button" data-detail-tab="${id}" class="${id === tab ? "active" : ""}">${escapeHtml(label)}</button>`).join("")}</nav>`;
+  return `<nav class="detail-tabs" aria-label="Role workspace sections">${TABS.map(([id, label]) => `<button type="button" data-detail-tab="${id}" class="${id === tab ? "active" : ""}" ${id === tab ? 'aria-current="page"' : ""}>${escapeHtml(label)}</button>`).join("")}</nav>`;
 }
 function sourceLine(role) {
   const url = safeExternalUrl(role.official_url);
@@ -90,7 +104,7 @@ function detailHeader(role, application, tab) {
   const compensation = compensationView(role);
   const action = primaryAction(role, application, tab);
   const stage = application?.state || role.pipeline_state || "Not tracked";
-  const deadline = application?.next_action_deadline ? `Due ${formatDate(application.next_action_deadline, true)}` : value(role.urgency, "Timing unconfirmed");
+  const deadline = deadlineView(application?.next_action_deadline, value(role.urgency, "Timing unconfirmed"));
   return `<header class="reference-role-header ${tab !== "overview" ? "compact" : ""}">
     <div class="role-header-main">
       <div class="role-header-copy">
@@ -101,29 +115,40 @@ function detailHeader(role, application, tab) {
       </div>
       <div class="role-header-side">${fitRing(role.fit_score)}${action}</div>
     </div>
-    <div class="role-header-status"><span>${escapeHtml(deadline)}</span><span>${escapeHtml(compensation.note)}</span></div>
+    <div class="role-header-status"><span class="deadline-value ${escapeHtml(deadline.tone)}">${escapeHtml(deadline.label)}</span><span>Compensation · ${escapeHtml(compensation.note)}</span></div>
     ${tabs(tab)}
   </header>`;
+}
+
+function overviewDecisionActions(application) {
+  if (!application?.package_ready) {
+    return `<div class="role-decision-actions"><span class="decision-prompt">Not ready to prepare?</span><button class="ref-button secondary" data-role-decision="investigate">Investigate</button><button class="text-action" data-role-decision="defer">Defer</button><button class="text-action danger" data-role-decision="reject">Reject</button></div>`;
+  }
+  if (["Preparing", "Ready to apply"].includes(application.state)) {
+    return `<div class="role-decision-state"><span>${icon("check", 16)} Application preparation is active</span><button class="text-action" data-role-decision="defer">Pause</button><button class="text-action danger" data-role-decision="reject">Stop pursuing</button></div>`;
+  }
+  return `<div class="role-decision-state"><span>${icon("check", 16)} Application tracked as ${escapeHtml(application.state)}</span></div>`;
 }
 
 function overviewTab(role, application) {
   const reasons = uniqueReasons(role, application);
   const direct = Array.isArray(role.strongest_matches) ? role.strongest_matches : [];
   const prohibited = Array.isArray(role.prohibited_claims) ? role.prohibited_claims : [];
+  const deadline = deadlineView(application?.next_action_deadline, value(role.urgency, "Timing unconfirmed"));
   return `<div class="role-overview-reference">
     <section class="role-conversion-card">
-      <div class="role-conversion-main"><h2>Why this is worth pursuing</h2>${reasons.length ? `<ul>${reasons.map((reason) => `<li><span>${icon("check", 15)}</span>${escapeHtml(reason)}</li>`).join("")}</ul>` : `<p>${escapeHtml(concise(candidateCopy(role.why_interview), 320))}</p>`}</div>
-      <aside><div><small>Main blocker</small><strong>${escapeHtml(concise(role.blocker, 120))}</strong></div><div><small>Fastest improvement</small><strong>${escapeHtml(concise(role.fastest_correction || role.primary_strategy, 130))}</strong></div></aside>
+      <div class="role-conversion-main"><h2>Why this is worth pursuing</h2>${reasons.length ? `<ul>${reasons.map((reason) => `<li><span>${icon("check", 15)}</span>${escapeHtml(reason)}</li>`).join("")}</ul>` : `<p>${escapeHtml(concise(candidateCopy(role.why_interview), 360))}</p>`}</div>
+      <aside><div><small>Main blocker</small><strong>${escapeHtml(concise(role.blocker, 240))}</strong></div><div><small>Fastest improvement</small><strong>${escapeHtml(concise(role.fastest_correction || role.primary_strategy, 260))}</strong></div></aside>
     </section>
-    <section class="role-next-action"><div><small>Recommended next action</small><h2>${escapeHtml(value(application?.next_action || role.primary_strategy, "Review the evidence and choose one action."))}</h2><p>${application?.next_action_deadline ? `Due ${escapeHtml(formatDate(application.next_action_deadline, true))}` : escapeHtml(value(role.urgency, "Timing unconfirmed"))}</p></div>${application?.package_ready ? `<button class="ref-button secondary" data-detail-tab="application">Open application</button>` : ""}</section>
-    <details class="reference-disclosure"><summary><span><strong>Evidence and source</strong><small>${direct.length} direct match${direct.length === 1 ? "" : "es"}</small></span><span>+</span></summary><div class="reference-disclosure-body">${sourceLine(role)}${direct.length ? `<div class="evidence-grid">${direct.map((match) => `<article><strong>${escapeHtml(match.requirement)}</strong><p>${escapeHtml(match.evidence)}</p><small>${escapeHtml(match.source)} · ${escapeHtml(match.strength)}</small></article>`).join("")}</div>` : `<p>No direct evidence match is strong enough to surface yet.</p>`}${prohibited.length ? `<div class="truth-boundary"><strong>Do not claim</strong><ul>${prohibited.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}</div></details>
-    <div class="role-decision-actions"><button class="ref-button primary" data-role-decision="pursue">Pursue</button><button class="ref-button secondary" data-role-decision="investigate">Investigate</button><button class="text-action" data-role-decision="defer">Defer</button><button class="text-action danger" data-role-decision="reject">Reject</button></div>
+    <section class="role-next-action"><div><small>Recommended next action</small><h2>${escapeHtml(value(application?.next_action || role.primary_strategy, "Review the evidence and choose one action."))}</h2><p class="deadline-value ${escapeHtml(deadline.tone)}">${escapeHtml(deadline.label)}</p></div></section>
+    <details class="reference-disclosure"><summary><span><strong>Evidence and source</strong><small>${direct.length} evidence-backed match${direct.length === 1 ? "" : "es"}</small></span><span>+</span></summary><div class="reference-disclosure-body">${sourceLine(role)}${direct.length ? `<div class="evidence-grid">${direct.map((match) => `<article><strong>${escapeHtml(match.requirement)}</strong><p>${escapeHtml(match.evidence)}</p><small>${escapeHtml(match.source)} · ${escapeHtml(match.strength)}</small></article>`).join("")}</div>` : `<p>No direct evidence match is strong enough to surface yet.</p>`}${prohibited.length ? `<div class="truth-boundary"><strong>Do not claim</strong><ul>${prohibited.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}</div></details>
+    ${overviewDecisionActions(application)}
   </div>`;
 }
 
 function applicationTab(role, application, contacts) {
   if (!application?.package_ready) {
-    return `<section class="application-empty reference-empty"><div class="empty-symbol">${icon("briefcase", 24)}</div><h2>No application package yet</h2><p>Select Pursue to create a role-specific, evidence-linked package. Nothing will be submitted externally.</p><button class="ref-button primary" data-role-decision="pursue"><span>Prepare package</span>${icon("arrow", 18)}</button></section>`;
+    return `<section class="application-empty reference-empty"><div class="empty-symbol">${icon("briefcase", 24)}</div><h2>No application package yet</h2><p>Prepare this application to create a role-specific, evidence-linked package. Nothing will be submitted externally.</p><button class="ref-button primary" data-role-decision="pursue"><span>Prepare package</span>${icon("arrow", 18)}</button></section>`;
   }
   const pkg = application.package || {};
   const reasons = Array.isArray(pkg.top_reasons) ? pkg.top_reasons.slice(0, 3) : [];
@@ -143,7 +168,7 @@ function applicationTab(role, application, contacts) {
     ${projects.length || publications.length ? `<section class="selected-evidence"><div><small>Projects to emphasize</small><strong>${escapeHtml(projects.join(" · ") || "None selected")}</strong></div><div><small>Publications to emphasize</small><strong>${escapeHtml(publications.join(" · ") || "None selected")}</strong></div></section>` : ""}
     ${prohibited.length ? `<section class="truth-boundary"><h3>Weaknesses that must not be hidden</h3><ul>${prohibited.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : ""}
     <details class="reference-disclosure"><summary><span><strong>Requirement evidence</strong><small>${matrix.length} requirement${matrix.length === 1 ? "" : "s"}</small></span><span>+</span></summary><div class="reference-disclosure-body requirement-matrix">${matrix.map((item) => `<article class="requirement-row ${item.strength === "missing" ? "missing" : ""}"><strong>${escapeHtml(item.requirement)}</strong><p>${escapeHtml(item.evidence)}</p><small>${escapeHtml(item.source)} · ${escapeHtml(item.strength)}</small></article>`).join("")}</div></details>
-    <details class="reference-disclosure"><summary><span><strong>Application tracking</strong><small>${escapeHtml(application.state)} · ${escapeHtml(application.next_action)}</small></span><span>+</span></summary><div class="reference-disclosure-body tracking-grid"><label>Stage<select id="detail-stage">${stageOptions(application.state)}</select></label><label>Next action<textarea id="detail-next-action" rows="3">${escapeHtml(application.next_action)}</textarea></label><label>Deadline<input id="detail-action-deadline" type="datetime-local" value="${application.next_action_deadline ? new Date(application.next_action_deadline).toISOString().slice(0, 16) : ""}"></label><button class="ref-button secondary" data-save-tracking>Save tracking</button></div></details>
+    <details class="reference-disclosure"><summary><span><strong>Application tracking</strong><small>${escapeHtml(application.state)} · ${escapeHtml(application.next_action)}</small></span><span>+</span></summary><div class="reference-disclosure-body tracking-grid"><label>Stage<select id="detail-stage">${stageOptions(application.state)}</select></label><label>Next action<textarea id="detail-next-action" rows="3">${escapeHtml(application.next_action)}</textarea></label><label>Deadline<input id="detail-action-deadline" type="datetime-local" value="${dateTimeLocalValue(application.next_action_deadline)}"></label><button class="ref-button secondary" data-save-tracking>Save tracking</button></div></details>
     <details class="reference-disclosure"><summary><span><strong>Contacts and history</strong><small>${roleContacts.length} verified contact${roleContacts.length === 1 ? "" : "s"} · ${(application.timeline || []).length} event${(application.timeline || []).length === 1 ? "" : "s"}</small></span><span>+</span></summary><div class="reference-disclosure-body">${roleContacts.length ? `<div class="contact-list">${roleContacts.map((contact) => `<article><strong>${escapeHtml(contact.name)}</strong><p>${escapeHtml(value(contact.role, "Role unconfirmed"))} · ${escapeHtml(contact.relationship)}</p></article>`).join("")}</div>` : `<p>No verified contact path is attached. Do not infer a referral.</p>`}${application.timeline?.length ? `<div class="timeline-list">${application.timeline.map((item) => `<article><strong>${escapeHtml(item.summary)}</strong><small>${escapeHtml(formatDate(item.occurred_at, true))}</small></article>`).join("")}</div>` : ""}</div></details>
   </div>`;
 }
@@ -155,8 +180,8 @@ function preparationTab(role, application, sessions) {
   const complete = ordered.filter((item) => item.complete).length;
   const later = ordered.filter((item) => item.id !== next.id);
   return `<div class="role-practice-reference">
-    <section class="practice-hero"><div><span class="eyebrow-badge">Next session</span><h2>${escapeHtml(next.competency)}</h2><p>${escapeHtml(next.prompt)}</p><div class="practice-meta"><span>${icon("clock", 15)} ${next.duration} min</span><span>${next.due_at ? `Due ${escapeHtml(formatDate(next.due_at, true))}` : "No deadline"}</span><span>${complete} of ${ordered.length} complete</span></div><button class="ref-button primary" data-complete-session="${next.id}"><span>Mark complete</span>${icon("check", 18)}</button></div><span class="practice-target">${icon("target", 44)}</span></section>
-    ${later.length ? `<section class="dashboard-section"><div class="section-title-row"><h2>Later sessions</h2></div><div class="practice-list">${later.map((item) => `<article class="practice-row ${item.complete ? "complete" : ""}"><span class="action-icon tone-3">${item.complete ? icon("check", 20) : icon("calendar", 20)}</span><span><strong>${escapeHtml(item.competency)}</strong><small>${item.duration} min · ${item.due_at ? escapeHtml(formatDate(item.due_at, true)) : "No deadline"}</small></span>${item.complete ? `<em>Complete</em>` : `<button class="text-link" data-complete-session="${item.id}">Complete</button>`}</article>`).join("")}</div></section>` : ""}
+    <section class="practice-hero"><div><span class="eyebrow-badge">Next session</span><h2>${escapeHtml(next.competency)}</h2><p>${escapeHtml(next.prompt)}</p><div class="practice-meta"><span>${icon("clock", 15)} ${next.duration} min</span><span class="deadline-value ${escapeHtml(deadlineView(next.due_at, "No deadline").tone)}">${escapeHtml(deadlineView(next.due_at, "No deadline").label)}</span><span>${complete} of ${ordered.length} complete</span></div><button class="ref-button primary" data-complete-session="${next.id}"><span>Mark complete</span>${icon("check", 18)}</button></div><span class="practice-target">${icon("target", 44)}</span></section>
+    ${later.length ? `<section class="dashboard-section"><div class="section-title-row"><h2>Later sessions</h2></div><div class="practice-list">${later.map((item) => `<article class="practice-row ${item.complete ? "complete" : ""}"><span class="action-icon tone-3">${item.complete ? icon("check", 20) : icon("calendar", 20)}</span><span><strong>${escapeHtml(item.competency)}</strong><small>${item.duration} min · ${escapeHtml(deadlineView(item.due_at, "No deadline").label)}</small></span>${item.complete ? `<em>Complete</em>` : `<button class="text-link" data-complete-session="${item.id}">Complete</button>`}</article>`).join("")}</div></section>` : ""}
   </div>`;
 }
 
@@ -179,7 +204,8 @@ function confirmDecision(role, decision, rerender) {
   const { close } = showDialog(`<div class="dialog-card"><h2>${escapeHtml(label)} this role?</h2><p>The decision will update your recommendation queue and remain reversible through the role history.</p><div class="dialog-actions"><button class="ref-button secondary" data-close-dialog>Cancel</button><button class="ref-button ${decision === "reject" ? "danger" : "primary"}" id="confirm-role-decision">${escapeHtml(label)}</button></div></div>`);
   $("#confirm-role-decision").onclick = async () => {
     await api(`/api/live/roles/${role.id}/decision`, { method: "POST", body: JSON.stringify({ decision }) });
-    close(); toast(`Role ${decision}d`); if (decision === "reject") window.SCIOS_BACK?.(); else await rerender("overview");
+    const outcome = { investigate: "marked for investigation", defer: "deferred", reject: "rejected" }[decision] || "updated";
+    close(); toast(`Role ${outcome}`); if (decision === "reject") window.SCIOS_BACK?.(); else await rerender("overview");
   };
 }
 
