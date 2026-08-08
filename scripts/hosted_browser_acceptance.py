@@ -54,7 +54,9 @@ def run_viewport(
     page.on("pageerror", lambda exc: page_errors.append(str(exc)))
     page.on(
         "requestfailed",
-        lambda req: failed_requests.append({"url": req.url, "failure": req.failure}),
+        lambda req: failed_requests.append({"url": req.url, "failure": req.failure})
+        if req.failure != "net::ERR_ABORTED"
+        else None,
     )
     page.on(
         "response",
