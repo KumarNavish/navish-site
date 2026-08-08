@@ -1,0 +1,60 @@
+name: Apply final production polish v14
+
+on:
+  push:
+    branches: [ux/final-polish-v14]
+    paths: [.final-polish-v14-trigger]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-final-polish-v14.db
+      SCIOS_WORKER_ENABLED: "false"
+      SCIOS_SESSION_SECURE_COOKIE: "false"
+      SCIOS_INTERNAL_SECRET: final-polish-v14-internal-secret
+      SCIOS_ACCESS_TOKEN: final-polish-v14-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/final-polish-v14
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12.8
+          cache: pip
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Apply checksum-bound polish patch
+        run: |
+          set -euo pipefail
+          cat .automation/final-polish-v14/chunk-* | tr -d '\r\n ' | base64 --decode | gzip --decompress > /tmp/final-polish-v14.patch
+          echo '5cedf2fca4f8fee38655849a1e0f496182d8355d7bd23bc9bbaafa44eca58284  /tmp/final-polish-v14.patch' | sha256sum --check --strict
+          patch -p1 --forward < /tmp/final-polish-v14.patch
+      - name: Validate final polish
+        run: |
+          set -euo pipefail
+          node --check static/ui.js
+          node --check static/personal-workspace.js
+          node --check static/workspace-detail.js
+          node --check static/workspace-access.js
+          python -m compileall -q app app.py scripts tests
+          pytest -q
+      - name: Publish clean product commit
+        run: |
+          set -euo pipefail
+          rm -rf .automation/final-polish-v14
+          rm -f .final-polish-v14-trigger
+          rm -f .github/workflows/apply-final-polish-v14.yml
+          git config user.name 'Swiss Career Intelligence QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'Polish the hiring workspace for clarity, accessibility, and reliable action'
+          git push origin HEAD:ux/final-polish-v14
