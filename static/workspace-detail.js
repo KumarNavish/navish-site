@@ -51,7 +51,7 @@ function safeExternalUrl(input) {
 }
 function fitRing(score) {
   const numeric = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
-  return `<div class="fit-ring detail-fit-ring" style="--fit:${numeric}" aria-label="Evidence fit ${numeric} out of 100"><div><strong>${numeric}</strong><span>Evidence fit</span></div></div>`;
+  return `<div class="fit-ring detail-fit-ring" aria-label="Evidence fit ${numeric} out of 100"><svg viewBox="0 0 42 42" aria-hidden="true"><circle class="fit-ring-track" cx="21" cy="21" r="17" pathLength="100"></circle><circle class="fit-ring-value" cx="21" cy="21" r="17" pathLength="100" stroke-dasharray="${numeric} 100"></circle></svg><div><strong>${numeric}</strong><span>Evidence fit</span></div></div>`;
 }
 function stageOptions(selected) {
   return APPLICATION_STATES.map((stage) => `<option value="${escapeHtml(stage)}" ${stage === selected ? "selected" : ""}>${escapeHtml(stage)}</option>`).join("");

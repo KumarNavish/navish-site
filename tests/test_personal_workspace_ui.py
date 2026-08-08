@@ -116,3 +116,16 @@ def test_reference_ui_preserves_truth_and_external_action_boundaries() -> None:
     assert '92%' not in app
     assert 'ETH Zürich' not in app
     assert 'Google Zurich' not in app
+
+
+def test_fit_ring_is_csp_safe() -> None:
+    app = (STATIC / "personal-workspace.js").read_text()
+    detail = (STATIC / "workspace-detail.js").read_text()
+    css = (STATIC / "workspace-white.css").read_text()
+
+    assert 'style="--fit:' not in app
+    assert 'style="--fit:' not in detail
+    assert 'stroke-dasharray="${numeric} 100"' in app
+    assert 'stroke-dasharray="${numeric} 100"' in detail
+    assert '.fit-ring-value' in css
+    assert 'conic-gradient(var(--ref-green)' not in css
