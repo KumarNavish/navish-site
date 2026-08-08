@@ -140,7 +140,7 @@ def run() -> None:
         browser = launch_browser(playwright)
         context, page = new_page(browser, {"width": 390, "height": 844}, console_errors, failed_requests)
         open_private(page)
-        assert page.get_by_text("SCI OS", exact=True).is_visible()
+        assert page.locator(".mobile-brand").get_by_text("SCI OS", exact=True).is_visible()
         assert page.locator(".mobile-nav").is_visible()
         screenshot(page, "reference-01-today-mobile-390.png")
         steps.append("Authenticated reference shell rendered on mobile")
