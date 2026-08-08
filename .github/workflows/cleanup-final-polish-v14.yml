@@ -1,0 +1,52 @@
+name: Clean final polish branch artifacts
+
+on:
+  push:
+    branches: [ux/final-polish-v14]
+    paths: [.cleanup-final-polish-v14-trigger]
+
+permissions:
+  contents: write
+
+jobs:
+  clean-and-verify:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-final-polish-clean.db
+      SCIOS_WORKER_ENABLED: "false"
+      SCIOS_SESSION_SECURE_COOKIE: "false"
+      SCIOS_INTERNAL_SECRET: final-polish-clean-internal-secret
+      SCIOS_ACCESS_TOKEN: final-polish-clean-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/final-polish-v14
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12.8
+          cache: pip
+      - name: Verify product
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          node --check static/ui.js
+          node --check static/personal-workspace.js
+          node --check static/workspace-detail.js
+          node --check static/workspace-access.js
+          pytest -q
+      - name: Remove generated files and publish clean commit
+        run: |
+          set -euo pipefail
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+          rm -rf .pytest_cache
+          rm -f .cleanup-final-polish-v14-trigger
+          rm -f .github/workflows/cleanup-final-polish-v14.yml
+          git config user.name 'Swiss Career Intelligence QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'Remove generated validation artifacts from final polish'
+          git push origin HEAD:ux/final-polish-v14
