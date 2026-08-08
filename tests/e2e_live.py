@@ -45,20 +45,40 @@ def assert_no_text_clipping(page: Page) -> None:
 def assert_bottom_content_reachable(page: Page) -> None:
     if not page.viewport_size or page.viewport_size["width"] > 900:
         return
+    page.evaluate(
+        """
+        () => {
+          document.documentElement.dataset.qaScrollBehavior =
+            document.documentElement.style.scrollBehavior || '';
+          document.documentElement.style.scrollBehavior = 'auto';
+          const height = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+          window.scrollTo({top: height, behavior: 'instant'});
+        }
+        """
+    )
+    page.wait_for_timeout(120)
     result = page.evaluate(
         """
         () => {
           const nav = document.querySelector('.mobile-nav');
           const view = document.querySelector('#view');
           if (!nav || !view) return {ok: false, reason: 'missing mobile navigation or view'};
-          window.scrollTo(0, document.documentElement.scrollHeight);
           const visibleChildren = [...view.querySelectorAll('button, a, summary, footer, section')]
             .filter((node) => node.offsetParent !== null);
           const last = visibleChildren.at(-1) || view;
           const navTop = nav.getBoundingClientRect().top;
           const lastBottom = last.getBoundingClientRect().bottom;
-          window.scrollTo(0, 0);
-          return {ok: lastBottom <= navTop + 1, navTop, lastBottom};
+          return {ok: lastBottom <= navTop + 1, navTop, lastBottom, scrollY: window.scrollY};
+        }
+        """
+    )
+    page.evaluate(
+        """
+        () => {
+          window.scrollTo({top: 0, behavior: 'instant'});
+          document.documentElement.style.scrollBehavior =
+            document.documentElement.dataset.qaScrollBehavior || '';
+          delete document.documentElement.dataset.qaScrollBehavior;
         }
         """
     )
@@ -83,6 +103,7 @@ def assert_keyboard_focus_visible(page: Page) -> None:
     )
     assert focus["tag"] in {"BUTTON", "A", "SUMMARY", "INPUT", "SELECT", "TEXTAREA"}, focus
     assert focus["outlineStyle"] != "none" and focus["outlineWidth"] != "0px", focus
+    page.evaluate("document.activeElement?.blur()")
 
 
 def assert_accessible_controls(page: Page) -> None:
@@ -143,6 +164,9 @@ def assert_role_workspace(page: Page, job_id: int, section: str, active_route: s
 
 
 def screenshot(page: Page, name: str) -> None:
+    toast = page.locator("#toast.show")
+    if toast.count() and toast.first.is_visible():
+        toast.first.wait_for(state="hidden", timeout=4_000)
     assert_no_horizontal_overflow(page)
     assert_no_text_clipping(page)
     assert_accessible_controls(page)
