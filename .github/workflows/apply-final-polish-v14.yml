@@ -1,0 +1,529 @@
+name: Apply final polish v14
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  apply:
+    if: startsWith(github.event.issue.title, '[APPLY FINAL POLISH V14]')
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-final-polish-v14.db
+      SCIOS_WORKER_ENABLED: "false"
+      SCIOS_SESSION_SECURE_COOKIE: "false"
+      SCIOS_INTERNAL_SECRET: final-polish-v14-internal-secret
+      SCIOS_ACCESS_TOKEN: ci-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/final-polish-v14
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12.8
+          cache: pip
+
+      - name: Apply final polish
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          index = root / 'static/index.html'
+          html = index.read_text()
+          if 'final-polish-v14.css' not in html:
+              html = html.replace('</head>', '  <link rel="stylesheet" href="/assets/final-polish-v14.css?v=polish14">\n</head>')
+          if 'class="skip-link"' not in html:
+              html = html.replace('<body>', '<body>\n  <a class="skip-link" href="#view">Skip to main content</a>')
+          html = html.replace('<section id="view" aria-live="polite">', '<section id="view" tabindex="-1" aria-live="polite" aria-atomic="false">')
+          if 'final-polish-v14.js' not in html:
+              html = html.replace('</body>', '  <script src="/assets/final-polish-v14.js?v=polish14" defer></script>\n</body>')
+          index.write_text(html)
+
+          css = r'''/* Final interaction and visual polish for the accepted SCI OS reference dashboard. */
+          :root {
+            --polish-focus: #075ee8;
+            --polish-shadow: 0 16px 44px rgba(16, 42, 90, 0.09);
+            --polish-shadow-soft: 0 8px 26px rgba(16, 42, 90, 0.06);
+          }
+
+          html { color-scheme: light; scroll-behavior: smooth; }
+          body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+          }
+
+          .skip-link {
+            position: fixed;
+            z-index: 10000;
+            top: 10px;
+            left: 12px;
+            transform: translateY(-160%);
+            padding: 10px 14px;
+            border-radius: 9px;
+            background: #0b1324;
+            color: #fff;
+            font: 700 14px/1.2 inherit;
+            box-shadow: var(--polish-shadow-soft);
+            transition: transform 150ms ease;
+          }
+          .skip-link:focus { transform: translateY(0); }
+
+          :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+            outline: 3px solid color-mix(in srgb, var(--polish-focus) 72%, white);
+            outline-offset: 3px;
+            border-radius: 8px;
+          }
+          :where(button, input, select, textarea) { font: inherit; }
+          button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+          button:disabled, [aria-disabled="true"] { cursor: not-allowed; opacity: .58; }
+
+          .workspace-main { min-width: 0; }
+          #view { min-width: 0; }
+          #view[aria-busy="true"] { cursor: progress; }
+
+          .workspace-nav-list button,
+          .workspace-profile-link,
+          .mobile-nav button,
+          .mobile-brand {
+            min-height: 44px;
+          }
+          .workspace-nav-list button,
+          .workspace-profile-link,
+          .mobile-nav button,
+          .ref-button,
+          .numbered-action,
+          .application-row,
+          .role-result-row,
+          .clean-row {
+            transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+          }
+          .workspace-nav-list button:hover:not(.active),
+          .workspace-profile-link:hover { background: #f5f8fd; }
+          .workspace-nav-list button[aria-current="page"],
+          .mobile-nav button[aria-current="page"] { color: var(--ref-blue); }
+
+          .dashboard-shell,
+          .flow-page,
+          .object-page {
+            width: min(100%, 1120px);
+            margin-inline: auto;
+          }
+          .dashboard-header { align-items: flex-start; }
+          .dashboard-greeting h1,
+          .page-header h1,
+          .reference-role-header h1 {
+            text-wrap: balance;
+            letter-spacing: -0.035em;
+          }
+          .dashboard-greeting p,
+          .page-header p,
+          .reference-role-header p { text-wrap: pretty; }
+
+          .impact-card {
+            border-color: #cbdcff;
+            box-shadow: var(--polish-shadow);
+            isolation: isolate;
+          }
+          .impact-card:hover { border-color: #b7cffd; }
+          .impact-card h2 { text-wrap: balance; }
+          .impact-card .ref-button.primary { min-height: 46px; }
+          .impact-card .fit-ring { flex: 0 0 auto; }
+
+          .numbered-action,
+          .application-row,
+          .preparation-card,
+          .role-result-row,
+          .clean-row {
+            border-color: #e0e6ef;
+            box-shadow: 0 1px 0 rgba(11, 19, 36, 0.02);
+          }
+          .numbered-action:hover,
+          .role-result-row:hover,
+          .clean-row:hover {
+            border-color: #c8d8f3;
+            background: #fbfdff;
+            box-shadow: var(--polish-shadow-soft);
+            transform: translateY(-1px);
+          }
+          .application-row:hover { background: #fbfdff; }
+          .numbered-action:active,
+          .role-result-row:active,
+          .clean-row:active { transform: translateY(0); }
+
+          .ref-button,
+          .button {
+            min-height: 44px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+          }
+          .ref-button.primary:hover:not(:disabled),
+          .button.primary:hover:not(:disabled) {
+            background: var(--ref-blue-strong);
+            box-shadow: 0 8px 20px rgba(11, 99, 246, 0.18);
+          }
+          .ref-button.secondary:hover:not(:disabled),
+          .button.secondary:hover:not(:disabled) { background: #f5f8ff; }
+          .is-pressed { transform: scale(.985) !important; }
+
+          .fit-ring svg { overflow: visible; }
+          .fit-ring-track { stroke: #e8edf4; }
+          .fit-ring-progress { filter: drop-shadow(0 2px 4px rgba(12, 175, 100, .14)); }
+
+          dialog {
+            width: min(92vw, 620px);
+            max-height: min(88vh, 760px);
+            overflow: auto;
+            border: 1px solid #dce3ee;
+            border-radius: 18px;
+            box-shadow: 0 30px 90px rgba(11, 19, 36, .22);
+          }
+          dialog::backdrop { background: rgba(11, 19, 36, .36); backdrop-filter: blur(2px); }
+          dialog form { min-width: 0; }
+          dialog input,
+          dialog textarea,
+          dialog select { width: 100%; min-height: 44px; }
+
+          #toast {
+            max-width: min(420px, calc(100vw - 32px));
+            box-shadow: var(--polish-shadow-soft);
+          }
+          .polish-offline {
+            position: fixed;
+            z-index: 9998;
+            left: 50%;
+            bottom: 24px;
+            transform: translateX(-50%);
+            padding: 10px 14px;
+            border: 1px solid #f0d28b;
+            border-radius: 10px;
+            background: #fff8e7;
+            color: #6f4a00;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: var(--polish-shadow-soft);
+          }
+
+          .application-table { overflow: hidden; }
+          .application-row { min-width: 0; }
+          .application-row > * { min-width: 0; }
+          .application-row strong,
+          .application-row span,
+          .role-result-row strong,
+          .role-result-row span { overflow-wrap: anywhere; }
+
+          .detail-tabs {
+            scrollbar-width: thin;
+            scroll-snap-type: x proximity;
+          }
+          .detail-tabs button { scroll-snap-align: start; min-height: 44px; }
+          .reference-role-header,
+          .application-reference,
+          .role-practice-reference { min-width: 0; }
+
+          @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            *, *::before, *::after {
+              animation-duration: .001ms !important;
+              animation-iteration-count: 1 !important;
+              transition-duration: .001ms !important;
+            }
+          }
+
+          @media (max-width: 900px) {
+            body { padding-bottom: env(safe-area-inset-bottom); }
+            .workspace-main {
+              padding-left: max(16px, env(safe-area-inset-left));
+              padding-right: max(16px, env(safe-area-inset-right));
+              padding-bottom: calc(92px + env(safe-area-inset-bottom));
+            }
+            .dashboard-shell,
+            .flow-page,
+            .object-page { width: 100%; }
+            .dashboard-header { gap: 18px; }
+            .dashboard-greeting h1 { font-size: clamp(28px, 8vw, 36px); }
+            .impact-card { border-radius: 18px; box-shadow: 0 10px 30px rgba(16, 42, 90, .08); }
+            .impact-card-main,
+            .impact-card-side { min-width: 0; }
+            .impact-card-side { border-left: 0; border-top: 1px solid #e2e7ef; }
+            .numbered-action { min-height: 68px; }
+            .mobile-nav {
+              padding-bottom: max(8px, env(safe-area-inset-bottom));
+              border-top-color: #dfe5ee;
+              box-shadow: 0 -8px 24px rgba(11, 19, 36, .06);
+            }
+            #toast { bottom: calc(86px + env(safe-area-inset-bottom)); }
+            .polish-offline { bottom: calc(88px + env(safe-area-inset-bottom)); }
+            dialog { width: calc(100vw - 24px); border-radius: 16px; }
+          }
+
+          @media (max-width: 420px) {
+            .workspace-main { padding-left: 14px; padding-right: 14px; }
+            .dashboard-header { align-items: stretch; }
+            .dashboard-header .ref-button { width: 100%; }
+            .impact-card { padding: 18px; }
+            .impact-card h2 { font-size: clamp(24px, 7.2vw, 30px); }
+            .impact-role-title { font-size: 17px; }
+            .numbered-action { padding-inline: 14px; }
+            .application-row { gap: 10px; }
+            .detail-tabs { margin-inline: -4px; padding-inline: 4px; }
+            .reference-role-header h1 { font-size: clamp(27px, 8.5vw, 36px); }
+          }
+
+          @media (hover: none) {
+            .numbered-action:hover,
+            .role-result-row:hover,
+            .clean-row:hover { transform: none; box-shadow: none; }
+          }
+          '''
+          (root / 'static/final-polish-v14.css').write_text(css.strip() + '\n')
+
+          js = r'''"use strict";
+          (() => {
+            const state = { pendingFocus: false, previousDialogFocus: null };
+            const $ = (selector, root = document) => root.querySelector(selector);
+            const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+            function zurichGreeting() {
+              try {
+                const parts = new Intl.DateTimeFormat("en-GB", {
+                  hour: "2-digit", hourCycle: "h23", timeZone: "Europe/Zurich",
+                }).formatToParts(new Date());
+                const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 9);
+                if (hour < 12) return "Good morning";
+                if (hour < 18) return "Good afternoon";
+                return "Good evening";
+              } catch (_) { return "Good morning"; }
+            }
+
+            function syncGreeting(root = document) {
+              $$('h1', root).forEach((heading) => {
+                const match = heading.textContent.trim().match(/^Good (?:morning|afternoon|evening),\s*(.+)$/i);
+                if (match) heading.textContent = `${zurichGreeting()}, ${match[1]}`;
+              });
+            }
+
+            function syncNavigation() {
+              $$('[data-route]').forEach((node) => {
+                if (node.classList.contains('active')) node.setAttribute('aria-current', 'page');
+                else node.removeAttribute('aria-current');
+              });
+            }
+
+            function makeRowsKeyboardAccessible(root = document) {
+              $$('[data-open-role], [data-open-application], [data-open-session]', root).forEach((node) => {
+                if (node.tagName === 'BUTTON' || node.tagName === 'A') return;
+                if (!node.hasAttribute('tabindex')) node.tabIndex = 0;
+                if (!node.hasAttribute('role')) node.setAttribute('role', 'button');
+                if (node.dataset.polishKeyboard === 'true') return;
+                node.dataset.polishKeyboard = 'true';
+                node.addEventListener('keydown', (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    node.click();
+                  }
+                });
+              });
+            }
+
+            function enhanceDialog(dialog) {
+              if (!dialog.open) return;
+              dialog.setAttribute('aria-modal', 'true');
+              if (!state.previousDialogFocus) state.previousDialogFocus = document.activeElement;
+              const first = $('input:not([type="hidden"]), textarea, select, button:not([disabled])', dialog);
+              if (first && !dialog.contains(document.activeElement)) queueMicrotask(() => first.focus({ preventScroll: true }));
+              if (dialog.dataset.polishDialog === 'true') return;
+              dialog.dataset.polishDialog = 'true';
+              dialog.addEventListener('close', () => {
+                const restore = state.previousDialogFocus;
+                state.previousDialogFocus = null;
+                if (restore instanceof HTMLElement && restore.isConnected) restore.focus({ preventScroll: true });
+                $$('[data-polish-original]', dialog).forEach((button) => {
+                  button.textContent = button.dataset.polishOriginal;
+                  button.disabled = false;
+                  delete button.dataset.polishOriginal;
+                });
+              });
+              dialog.addEventListener('click', (event) => {
+                const box = dialog.getBoundingClientRect();
+                const outside = event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+                if (outside) dialog.close();
+              });
+            }
+
+            function focusNewPage(root = document) {
+              if (!state.pendingFocus) return;
+              const heading = $('h1', root) || $('#view');
+              if (heading instanceof HTMLElement) {
+                if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1;
+                heading.focus({ preventScroll: true });
+              }
+              state.pendingFocus = false;
+            }
+
+            function enhance(root = document) {
+              syncGreeting(root);
+              syncNavigation();
+              makeRowsKeyboardAccessible(root);
+              $$('dialog[open]').forEach(enhanceDialog);
+              focusNewPage(root);
+              const view = $('#view');
+              if (view) view.setAttribute('aria-busy', 'false');
+            }
+
+            document.addEventListener('click', (event) => {
+              const actionable = event.target.closest('[data-route], [data-open-role], [data-open-application], [data-open-session], [data-detail-tab]');
+              if (actionable) {
+                state.pendingFocus = true;
+                const view = $('#view');
+                if (view) view.setAttribute('aria-busy', 'true');
+              }
+              const button = event.target.closest('button, .ref-button, .button');
+              if (button && !button.disabled) {
+                button.classList.add('is-pressed');
+                window.setTimeout(() => button.classList.remove('is-pressed'), 130);
+              }
+            }, true);
+
+            document.addEventListener('submit', (event) => {
+              const form = event.target;
+              if (!(form instanceof HTMLFormElement) || !form.closest('dialog')) return;
+              const submit = form.querySelector('button[type="submit"], input[type="submit"]');
+              if (!(submit instanceof HTMLButtonElement)) return;
+              if (submit.dataset.polishOriginal) {
+                event.preventDefault();
+                return;
+              }
+              submit.dataset.polishOriginal = submit.textContent.trim();
+              submit.disabled = true;
+              submit.textContent = submit.dataset.polishOriginal.toLowerCase().includes('job') ? 'Adding job…' : 'Working…';
+              window.setTimeout(() => {
+                if (submit.isConnected && submit.dataset.polishOriginal) {
+                  submit.textContent = submit.dataset.polishOriginal;
+                  submit.disabled = false;
+                  delete submit.dataset.polishOriginal;
+                }
+              }, 15000);
+            }, true);
+
+            function showOffline() {
+              if ($('.polish-offline')) return;
+              const notice = document.createElement('div');
+              notice.className = 'polish-offline';
+              notice.setAttribute('role', 'status');
+              notice.textContent = 'You are offline. Existing information remains visible; changes will resume when connected.';
+              document.body.append(notice);
+            }
+            function hideOffline() { $('.polish-offline')?.remove(); }
+            window.addEventListener('offline', showOffline);
+            window.addEventListener('online', hideOffline);
+
+            const observer = new MutationObserver((mutations) => {
+              const changed = mutations.some((mutation) => mutation.addedNodes.length || mutation.type === 'attributes');
+              if (changed) requestAnimationFrame(() => enhance(document));
+            });
+            observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'open'] });
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => enhance(document), { once: true });
+            else enhance(document);
+          })();
+          '''
+          (root / 'static/final-polish-v14.js').write_text(js.strip() + '\n')
+
+          # Make browser tests accept the time-correct Zurich greeting and probe final polish.
+          for path in (root / 'tests/e2e_live.py', root / 'scripts/hosted_browser_acceptance.py'):
+              text = path.read_text()
+              text = text.replace('page.get_by_role("heading", name="Good morning, Navish", exact=True)', 'page.get_by_role("heading", name=__import__("re").compile(r"Good (morning|afternoon|evening), Navish"))')
+              path.write_text(text)
+
+          hosted = root / 'scripts/hosted_browser_acceptance.py'
+          text = hosted.read_text()
+          marker = '    page.screenshot(path=str(out / f"{name}-01-today.png"))\n    checkpoints.append("today")\n'
+          if 'add_job_dialog' not in text and marker in text:
+              replacement = '''    assert page.locator(".skip-link").count() == 1\n    add_job = page.locator("[data-open-import]:visible").first\n    add_job.click()\n    dialog = page.locator("dialog[open]")\n    dialog.wait_for(timeout=60_000)\n    assert dialog.get_attribute("aria-modal") == "true"\n    focused_tag = page.evaluate("document.activeElement && document.activeElement.tagName")\n    assert focused_tag in {"INPUT", "TEXTAREA", "SELECT", "BUTTON"}\n    page.keyboard.press("Escape")\n    dialog.wait_for(state="hidden", timeout=60_000)\n    checkpoints.append("add_job_dialog")\n    page.screenshot(path=str(out / f"{name}-01-today.png"))\n    checkpoints.append("today")\n'''
+              text = text.replace(marker, replacement)
+          hosted.write_text(text)
+
+          test = r'''from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+STATIC = ROOT / "static"
+
+
+def test_final_polish_assets_and_accessibility_contract() -> None:
+    html = (STATIC / "index.html").read_text()
+    css = (STATIC / "final-polish-v14.css").read_text()
+    js = (STATIC / "final-polish-v14.js").read_text()
+
+    assert 'class="skip-link"' in html
+    assert 'href="#view"' in html
+    assert 'id="view" tabindex="-1"' in html
+    assert '/assets/final-polish-v14.css?v=polish14' in html
+    assert '/assets/final-polish-v14.js?v=polish14' in html
+    assert ':focus-visible' in css
+    assert 'prefers-reduced-motion' in css
+    assert 'env(safe-area-inset-bottom)' in css
+    assert '.impact-card' in css
+    assert 'MutationObserver' in js
+    assert 'aria-current' in js
+    assert 'Europe/Zurich' in js
+    assert 'dialog.setAttribute(\'aria-modal\', \'true\')' in js
+    assert "event.key === 'Enter'" in js
+    assert 'You are offline' in js
+
+
+def test_final_polish_preserves_external_action_boundary() -> None:
+    js = (STATIC / "final-polish-v14.js").read_text()
+    forbidden = ("submit application", "send message", "send referral", "accept offer")
+    lowered = js.lower()
+    for phrase in forbidden:
+        assert phrase not in lowered
+'''
+          (root / 'tests/test_final_polish_ui.py').write_text(test)
+          PY
+
+      - name: Validate complete application
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt playwright==1.54.0
+          python -m compileall -q app tests scripts
+          node --check static/ui.js
+          node --check static/workspace-access.js
+          node --check static/personal-workspace.js
+          node --check static/workspace-detail.js
+          node --check static/final-polish-v14.js
+          pytest -q
+          python -m playwright install --with-deps chromium
+          uvicorn app:app --host 127.0.0.1 --port 8000 >/tmp/scios-final-polish.log 2>&1 &
+          app_pid=$!
+          trap 'kill $app_pid || true' EXIT
+          for attempt in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8000/readyz >/tmp/final-polish-ready.json && break
+            sleep 1
+          done
+          python tests/e2e_live.py
+
+      - name: Commit polished release branch
+        run: |
+          git config user.name 'Swiss Career Intelligence UI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add static/index.html static/final-polish-v14.css static/final-polish-v14.js tests/e2e_live.py scripts/hosted_browser_acceptance.py tests/test_final_polish_ui.py
+          git commit -m 'Polish the SCI OS hiring experience and accessibility'
+          git push origin HEAD:ux/final-polish-v14
+
+      - name: Publish result
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then result=success; else result=failure; fi
+          gh issue comment "${{ github.event.issue.number }}" --body "Final polish v14 application result: ${result}. Workflow run ID: ${{ github.run_id }}."
