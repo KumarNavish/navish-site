@@ -1,0 +1,72 @@
+name: Apply core-flow CLARITY v15
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  apply:
+    if: startsWith(github.event.issue.title, '[APPLY CORE FLOW V15]')
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite:////tmp/scios-core-flow-v15.db
+      SCIOS_WORKER_ENABLED: "false"
+      SCIOS_SESSION_SECURE_COOKIE: "false"
+      SCIOS_INTERNAL_SECRET: core-flow-v15-internal-secret
+      SCIOS_ACCESS_TOKEN: ci-private-access
+      SCIOS_OWNER_EMAIL: navish.kumar@unibas.ch
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/core-flow-clarity-v15
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12.8
+          cache: pip
+
+      - name: Apply the verified repair payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -dc .automation/core-flow-v15.patch.gz | patch --batch --forward -p1
+          git checkout -- docs/e2e/report.json
+          git rm .automation/core-flow-v15.patch.gz .github/workflows/apply-core-flow-v15.yml
+
+      - name: Install and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f /tmp/scios-core-flow-v15.db
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m compileall -q app app.py scripts tests
+          for file in static/*.js; do
+            if grep -Eq '^(import|export) ' "$file"; then
+              node --input-type=module --check < "$file"
+            else
+              node --check "$file"
+            fi
+          done
+          PYTHONPATH=. pytest -q
+          git diff --check
+
+      - name: Commit the verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Swiss Career Intelligence Reliability"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix role routing and make Swiss discovery schedules reliable"
+          git push origin HEAD:fix/core-flow-clarity-v15
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "Core-flow repair applied and verified. Commit: $(git rev-parse HEAD)"
