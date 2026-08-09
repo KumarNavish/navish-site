@@ -1,0 +1,7 @@
+{
+  "audience": "scios-hosted-browser-qa",
+  "sha256": "202a7787fd2ea2e8b597bdb4827c51bd856e7d004ab4f38034b17ea502ee0a3d",
+  "issued_at_utc": "2026-08-09T09:01:24.659217Z",
+  "expires_at_utc": "2026-08-09T09:20:24.659217Z",
+  "workflow_run_id": "31304883937"
+}
