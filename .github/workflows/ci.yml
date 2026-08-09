@@ -138,7 +138,6 @@ jobs:
         run: exit 1
 
   apply_core_flow:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Temporarily enable core-flow v15 repair'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -159,10 +158,14 @@ jobs:
         with:
           python-version: '3.12.8'
           cache: pip
-      - name: Apply and verify the staged repair
+      - name: Apply, verify, and push the staged repair when present
         shell: bash
         run: |
           set -euo pipefail
+          if [ ! -f .automation/core-flow-v15.patch.gz ]; then
+            echo 'Core-flow payload already applied; nothing to do.'
+            exit 0
+          fi
           gzip -dc .automation/core-flow-v15.patch.gz | patch --batch --forward -p1
           git checkout -- docs/e2e/report.json
           git rm .automation/core-flow-v15.patch.gz .github/workflows/apply-core-flow-v15.yml
@@ -179,10 +182,6 @@ jobs:
           done
           PYTHONPATH=. pytest -q
           git diff --check
-      - name: Push verified product changes
-        shell: bash
-        run: |
-          set -euo pipefail
           git config user.name 'Swiss Career Intelligence Reliability'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
