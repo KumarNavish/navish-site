@@ -8,7 +8,7 @@ on:
       - 'hosted-acceptance-trigger.txt'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: scios-hosted-acceptance
@@ -21,9 +21,9 @@ jobs:
     env:
       ORIGIN: https://swiss-career-intelligence-os.onrender.com
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          persist-credentials: false
       - name: Exercise HTTPS, zero-cost controls, diagnostics, security, and public boundaries
         id: probe
         continue-on-error: true
@@ -171,16 +171,16 @@ jobs:
           }
           Path('docs/hosted-acceptance.json').write_text(json.dumps(payload, indent=2) + '\n')
           PY
-          git config user.name 'Swiss Career Intelligence Hosted QA'
-          git config user.email 'actions@users.noreply.github.com'
-          git fetch origin main
-          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo 'Main advanced during hosted acceptance; preserving evidence in workflow logs only.'
-            exit 0
-          fi
-          git add docs/hosted-acceptance.json
-          git commit -m 'Record externally observed hosted acceptance evidence' || exit 0
-          git push origin HEAD:main
       - name: Enforce probe result
         if: always() && steps.probe.outcome != 'success'
         run: exit 1
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hosted-acceptance-evidence
+          path: |
+            docs/hosted-acceptance.json
+          retention-days: 7
+          if-no-files-found: warn

@@ -5,7 +5,7 @@ on:
     types: [opened]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: scios-exact-production-validation
@@ -27,11 +27,11 @@ jobs:
       OPENAI_ENABLED: 'false'
       PAID_SERVICES_ALLOWED: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12.8'
           cache: pip
@@ -67,7 +67,7 @@ jobs:
         run: |
           uvicorn app:app --host 127.0.0.1 --port 8000 > /tmp/scios-exact-server.log 2>&1 &
           echo $! > /tmp/scios-exact-server.pid
-          for attempt in {1..60}; do
+          for _ in {1..60}; do
             if curl --fail --silent http://127.0.0.1:8000/readyz >/tmp/ready.json; then
               cat /tmp/ready.json
               exit 0
@@ -121,12 +121,17 @@ jobs:
           }
           Path('docs/final-redesign-validation.json').write_text(json.dumps(payload, indent=2) + '\n')
           PY
-          git config user.name 'Swiss Career Intelligence QA'
-          git config user.email 'actions@users.noreply.github.com'
-          git pull --rebase origin main
-          git add docs/final-redesign-validation.json docs/e2e
-          git commit -m 'Record final workflow redesign validation evidence' || exit 0
-          git push origin HEAD:main
       - name: Enforce exact validation
         if: always() && (steps.suite.outcome != 'success' || steps.start.outcome != 'success' || steps.browser.outcome != 'success')
         run: exit 1
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-validation-evidence
+          path: |
+            docs/final-redesign-validation.json
+            docs/e2e
+          retention-days: 7
+          if-no-files-found: warn
