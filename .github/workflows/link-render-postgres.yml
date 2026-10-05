@@ -188,7 +188,7 @@ jobs:
 
           ready_code=000
           health_code=000
-          for attempt in $(seq 1 48); do
+          for _ in $(seq 1 48); do
             sleep 10
             health_code=$(curl --silent --show-error --max-time 45 --output /tmp/health.json --write-out '%{http_code}' "$ORIGIN/healthz" || true)
             ready_code=$(curl --silent --show-error --max-time 45 --output /tmp/ready.json --write-out '%{http_code}' "$ORIGIN/readyz" || true)

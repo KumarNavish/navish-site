@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/white-workspace
-          for attempt in {1..12}; do
+          for _ in {1..12}; do
             if curl --fail --silent --show-error --max-time 90 "$ORIGIN/" -o /tmp/white-workspace/index.html \
               && grep -q 'workspace-white.css?v=workspace9' /tmp/white-workspace/index.html; then
               break
