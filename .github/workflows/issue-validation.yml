@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   validate:
-    if: contains(github.event.issue.title, '[SCIOS VALIDATE]')
+    if: (github.event_name != 'issues' || github.event.issue.user.login == github.repository_owner) && (contains(github.event.issue.title, '[SCIOS VALIDATE]'))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:

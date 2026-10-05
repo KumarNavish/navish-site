@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply:
-    if: startsWith(github.event.issue.title, '[APPLY CORE FLOW V15]')
+    if: (github.event_name != 'issues' || github.event.issue.user.login == github.repository_owner) && (startsWith(github.event.issue.title, '[APPLY CORE FLOW V15]'))
     runs-on: ubuntu-24.04
     env:
       PYTHONPATH: .

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   cleanup:
-    if: startsWith(github.event.issue.title, '[CLEAN FINAL POLISH V14]')
+    if: (github.event_name != 'issues' || github.event.issue.user.login == github.repository_owner) && (startsWith(github.event.issue.title, '[CLEAN FINAL POLISH V14]'))
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
