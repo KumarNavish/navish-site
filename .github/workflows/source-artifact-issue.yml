@@ -63,7 +63,7 @@ jobs:
       - name: Publish diagnostic run identifier
         run: |
           gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "Core-flow repair started. Workflow run ID: $GITHUB_RUN_ID"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: 3.12.8
           cache: pip
