@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   export:
-    if: contains(github.event.issue.title, '[SOURCE ARTIFACT]')
+    if: (github.event_name != 'issues' || github.event.issue.user.login == github.repository_owner) && (contains(github.event.issue.title, '[SOURCE ARTIFACT]'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
           gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body "Source artifact ready. Workflow run ID: ${{ github.run_id }}"
 
   apply_core_flow:
-    if: startsWith(github.event.issue.title, '[APPLY CORE FLOW V15]')
+    if: (github.event_name != 'issues' || github.event.issue.user.login == github.repository_owner) && (startsWith(github.event.issue.title, '[APPLY CORE FLOW V15]'))
     runs-on: ubuntu-24.04
     env:
       PYTHONPATH: .
