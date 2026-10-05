@@ -1,10 +1,6 @@
 name: Free scheduler wake
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/free-scheduler-wake.yml'
   workflow_dispatch:
   schedule:
     # Duplicate CET/CEST wake windows are intentional. The application itself
@@ -15,7 +11,7 @@ on:
     - cron: '0 16,17 * * 0'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: scios-free-scheduler-wake
@@ -26,9 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          persist-credentials: false
       - name: Wake the free service and run only due schedules
         run: |
           set -euo pipefail
@@ -46,8 +42,7 @@ jobs:
           assert payload.get('api_cost_chf') == 0
           print(json.dumps(payload, indent=2))
           PY
-      - name: Persist one-time wake validation evidence
-        if: github.event_name == 'push'
+      - name: Record wake validation evidence
         run: |
           set -euo pipefail
           mkdir -p docs
@@ -67,9 +62,14 @@ jobs:
           }
           Path('docs/free-scheduler-wake-validation.json').write_text(json.dumps(report, indent=2) + '\n')
           PY
-          git config user.name 'Swiss Career Intelligence Scheduler QA'
-          git config user.email 'actions@users.noreply.github.com'
-          git pull --rebase origin main
-          git add docs/free-scheduler-wake-validation.json
-          git commit -m 'Record free scheduler wake validation' || exit 0
-          git push origin HEAD:main
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: free-scheduler-wake-evidence
+          path: |
+            docs/free-scheduler-wake-validation.json
+            /tmp/scios-wake.json
+          retention-days: 7
+          if-no-files-found: warn

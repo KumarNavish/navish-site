@@ -6,10 +6,9 @@ on:
     branches: [main]
     paths:
       - 'render-postgres-link-trigger.txt'
-      - '.github/workflows/link-render-postgres.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: link-existing-render-postgres
@@ -30,9 +29,9 @@ jobs:
       DATABASE_URL_ALT: ${{ secrets.RENDER_POSTGRES_URL }}
       DATABASE_URL_GENERIC: ${{ secrets.DATABASE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - name: Attach the existing database without exposing credentials
         id: link
@@ -235,14 +234,17 @@ jobs:
             mkdir -p docs
             printf '%s\n' '{"status":"workflow_failed_before_evidence","credentials_exposed":false}' > docs/render-postgres-link.json
           fi
-          git config user.name 'Swiss Career Intelligence Deployment Bot'
-          git config user.email 'actions@users.noreply.github.com'
-          git fetch origin main
-          git rebase origin/main || git rebase --abort
-          git add docs/render-postgres-link.json
-          git commit -m 'Record Render PostgreSQL attachment evidence' || exit 0
-          git push origin HEAD:main
 
       - name: Enforce linkage result
         if: always() && steps.link.outcome != 'success'
         run: exit 1
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: link-render-postgres-evidence
+          path: |
+            docs/render-postgres-link.json
+          retention-days: 7
+          if-no-files-found: warn
