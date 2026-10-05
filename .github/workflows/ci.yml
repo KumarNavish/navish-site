@@ -1,38 +1,22 @@
 name: Production validation
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [main, ux-workflow-redesign]
-    paths:
-      - 'app.py'
-      - 'app/**'
-      - 'static/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - 'pytest.ini'
-      - 'ci-trigger.txt'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'app.py'
-      - 'app/**'
-      - 'static/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - 'pytest.ini'
-      - '.github/workflows/ci.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: scios-production-validation-${{ github.ref }}
-  cancel-in-progress: false
+  group: scios-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
+    name: SCIOS CI
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -52,121 +36,37 @@ jobs:
       OPENAI_MAX_MONTHLY_COST_USD: '0'
       PAID_SERVICES_ALLOWED: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12.8'
           cache: pip
-      - name: Apply and verify the staged core-flow repair
-        if: github.event_name == 'push' && github.ref_name == 'main'
+          cache-dependency-path: requirements.txt
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install pinned test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python and validate browser JavaScript
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin fix/core-flow-clarity-v15
-          git switch --detach origin/fix/core-flow-clarity-v15
-          if [ -f .automation/core-flow-v15.patch.gz ]; then
-            gzip -dc .automation/core-flow-v15.patch.gz | patch --batch --forward -p1
-            git checkout -- docs/e2e/report.json
-            git rm .automation/core-flow-v15.patch.gz .github/workflows/apply-core-flow-v15.yml
-            rm -f /tmp/scios-core-flow-v15.db
-            python -m pip install --upgrade pip
-            python -m pip install -r requirements.txt
-            DATABASE_URL=sqlite:////tmp/scios-core-flow-v15.db python -m compileall -q app app.py scripts tests
-            for file in static/*.js; do
-              if grep -Eq '^(import|export) ' "$file"; then
-                node --input-type=module --check < "$file"
-              else
-                node --check "$file"
-              fi
-            done
-            DATABASE_URL=sqlite:////tmp/scios-core-flow-v15.db PYTHONPATH=. pytest -q
-            git diff --check
-            git config user.name 'Swiss Career Intelligence Reliability'
-            git config user.email 'actions@users.noreply.github.com'
-            git add -A
-            git commit -m 'Fix role routing and make Swiss discovery schedules reliable'
-            git push origin HEAD:fix/core-flow-clarity-v15
-          else
-            echo 'Core-flow payload already applied; no branch mutation required.'
-          fi
-          git switch --detach "$GITHUB_SHA"
-      - name: Install deterministic dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-      - name: Compile, validate all JavaScript, and run the full suite
-        id: validation
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          failed=0
-          python -m compileall -q app.py app tests 2>&1 | tee /tmp/compile.txt || failed=1
-          : > /tmp/node-all.txt
+          python -m compileall -q app.py app tests
           for file in static/*.js; do
             if grep -Eq '^(import|export) ' "$file"; then
-              node --input-type=module --check < "$file" >> /tmp/node-all.txt 2>&1 || failed=1
+              node --input-type=module --check < "$file"
             else
-              node --check "$file" >> /tmp/node-all.txt 2>&1 || failed=1
+              node --check "$file"
             fi
           done
-          cat /tmp/node-all.txt
-          pytest -q 2>&1 | tee /tmp/pytest.txt || failed=1
-          exit "$failed"
-      - name: Persist exact CI evidence
+      - name: Run isolated zero-API regression tests
+        run: python -m pytest -q --junitxml=/tmp/scios-junit.xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
-        env:
-          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p docs
-          python - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from pathlib import Path
-
-          def tail(path: str, limit: int = 40) -> list[str]:
-              file = Path(path)
-              return file.read_text(errors='replace').splitlines()[-limit:] if file.exists() else []
-
-          payload = {
-              'tested_commit': os.environ['GITHUB_SHA'],
-              'workflow': 'Production validation',
-              'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
-              'result': os.environ.get('VALIDATION_OUTCOME', 'unknown'),
-              'python': '3.12.8',
-              'zero_cost_mode': {
-                  'openai_enabled': False,
-                  'paid_services_allowed': False,
-                  'api_cost_chf': 0,
-              },
-              'checks': {
-                  'python_compile': tail('/tmp/compile.txt'),
-                  'node_all_static_modules': tail('/tmp/node-all.txt'),
-                  'pytest': tail('/tmp/pytest.txt'),
-              },
-          }
-          output = 'docs/ci-redesign-branch.json' if os.environ.get('GITHUB_REF_NAME') == 'ux-workflow-redesign' else 'docs/ci-live.json'
-          Path(output).write_text(json.dumps(payload, indent=2) + '\n')
-          PY
-          if [ "$GITHUB_EVENT_NAME" != 'push' ]; then
-            echo 'Pull-request validation complete; evidence remains in workflow logs.'
-            exit 0
-          fi
-          target_file=docs/ci-live.json
-          if [ "$GITHUB_REF_NAME" = 'ux-workflow-redesign' ]; then target_file=docs/ci-redesign-branch.json; fi
-          git config user.name 'Swiss Career Intelligence CI'
-          git config user.email 'actions@users.noreply.github.com'
-          git fetch origin "$GITHUB_REF_NAME"
-          if [ "$(git rev-parse origin/$GITHUB_REF_NAME)" != "$GITHUB_SHA" ]; then
-            echo 'Branch advanced during validation; preserving results in workflow logs only.'
-            exit 0
-          fi
-          git add "$target_file"
-          git commit -m 'Record production validation evidence' || exit 0
-          git push origin "HEAD:$GITHUB_REF_NAME"
-      - name: Enforce validation result
-        if: always() && steps.validation.outcome != 'success'
-        run: exit 1
+        with:
+          name: scios-test-evidence-${{ github.run_id }}
+          path: /tmp/scios-junit.xml
+          if-no-files-found: ignore
+          retention-days: 7
